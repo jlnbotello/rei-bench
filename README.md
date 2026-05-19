@@ -87,14 +87,16 @@ By default, the script resolves models securely using standard environment varia
 
 If you need to configure custom API endpoints (e.g., an OpenAI-compatible server on a non-standard port), you can place a standard `models.json` file inside the `pi-bench/` root directory. The script will automatically detect and load it.
 
-You can explicitly override the model for the agent and the judge using CLI flags. Additionally, you can provide a `--platform` flag to automatically save the results directly into the `benchmark_results/<platform>/` folder.
+You can explicitly override the model for the agent and the judge using CLI flags. Additionally, you can provide a `--platform` flag to automatically save the results directly into the `benchmark_results/<platform>/` folder. If you want to append a suffix to the auto-detected model name (e.g., to distinguish MTP runs), use `--model-tag`:
 
 ```bash
 ./run-docker.sh tasks/verified-mini/ \
   --judge-model google/gemini-3.1-pro-preview \
   --platform strix-halo \
+  --model-tag mtp \
   --timeout 45
 ```
+*This would produce a results directory like `Qwen3_6-35B-A3B-UD-Q8_K_XL_gguf-mtp_results/` instead of `Qwen3_6-35B-A3B-UD-Q8_K_XL_gguf_results/`.*
 
 ## Results & Multi-Platform Dashboard
 

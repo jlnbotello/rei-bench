@@ -97,8 +97,8 @@ const App = {
             return 'low';
         };
 
-        const openModal = (taskId, modelId, result) => {
-            activeModal.value = { taskId, modelId, result };
+        const openModal = (taskId, modelId, result, tag) => {
+            activeModal.value = { taskId, modelId, result, tag };
             document.body.style.overflow = 'hidden'; 
         };
 

@@ -269,6 +269,7 @@ async function main() {
     options: {
       model: { type: "string" },
       "judge-model": { type: "string" },
+      "model-tag": { type: "string" },
       timeout: { type: "string", default: "30" },
       platform: { type: "string" },
     },
@@ -277,7 +278,7 @@ async function main() {
 
   const targetPath = positionals[0];
   if (!targetPath) {
-    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--model provider/model-id] [--judge-model provider/model-id] [--platform platform-id]");
+    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--model provider/model-id] [--judge-model provider/model-id] [--model-tag tag] [--platform platform-id]");
     process.exit(1);
   }
 
@@ -315,6 +316,7 @@ async function main() {
   console.log(`[INFO] Found ${taskFiles.length} tasks to run.`);
   const timeoutMin = parseInt(values.timeout as string, 10) || 30;
   
+  const modelTag = values["model-tag"] as string | undefined;
   let outputDir = "results";
   if (!agentModelReq || agentModelReq.provider === "llama.cpp") {
     try {
@@ -324,15 +326,20 @@ async function main() {
         const quantName = data.data[0].id.replace(/[^a-zA-Z0-9_-]/g, "_");
         outputDir = `${quantName}_results`;
       } else if (agentModelReq) {
-        outputDir = `${agentModelReq.id.replace(/\\//g, "_")}_results`;
+        outputDir = `${agentModelReq.id.replace(/\\\//g, "_")}_results`;
       }
     } catch (e) {
       if (agentModelReq) {
-        outputDir = `${agentModelReq.id.replace(/\\//g, "_")}_results`;
+        outputDir = `${agentModelReq.id.replace(/\\\//g, "_")}_results`;
       }
     }
   } else if (agentModelReq) {
     outputDir = `${agentModelReq.id.replace(/\//g, "_")}_results`;
+  }
+
+  // Append model tag to directory name for filesystem uniqueness
+  if (modelTag) {
+    outputDir = outputDir.replace(/_results$/, `-${modelTag}_results`);
   }
 
   if (values.platform) {
@@ -340,6 +347,9 @@ async function main() {
   }
 
   await mkdir(outputDir, { recursive: true });
+  if (modelTag) {
+    await writeFile(join(outputDir, "run-meta.json"), JSON.stringify({ modelTag }, null, 2));
+  }
   console.log(`[INFO] Saving results to directory: ${outputDir}`);
 
   const results = [];

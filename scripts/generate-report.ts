@@ -25,6 +25,7 @@ interface ModelStats {
   id: string;
   platformId: string;
   name: string;
+  tag: string | null;
   totalTasks: number;
   passedTasks: number;
   successRate: number;
@@ -70,7 +71,7 @@ async function main() {
   }
   
   // Array of { platform, modelDir, modelName }
-  const scanTargets: Array<{ platform: Platform; dir: string; name: string }> = [];
+  const scanTargets: Array<{ platform: Platform; dir: string; name: string; tag: string | null }> = [];
 
   for (const dirName of platformDirs) {
     const fullPath = join(benchmarkResultsDir, dirName);
@@ -97,17 +98,37 @@ async function main() {
     const subDirs = await getDirectories(fullPath);
     for (const subDir of subDirs) {
       if (subDir.endsWith("_results")) {
+        // Read optional run-meta.json for model tag
+        let modelTag: string | null = null;
+        const metaPath = join(fullPath, subDir, "run-meta.json");
+        const metaContent = await safeReadFile(metaPath);
+        if (metaContent) {
+          try {
+            const meta = JSON.parse(metaContent);
+            modelTag = meta.modelTag || null;
+          } catch {}
+        }
+
+        // Strip the tag suffix from the directory name for a clean model name
+        let modelName = subDir.replace("_results", "");
+        if (modelTag) {
+          modelName = modelName.replace(new RegExp(`-${modelTag}$`), "");
+        }
+
         scanTargets.push({
           platform: platformData,
           dir: join(fullPath, subDir),
-          name: subDir.replace("_results", "")
+          name: modelName,
+          tag: modelTag
         });
       }
     }
   }
 
   for (const target of scanTargets) {
-    const modelUniqueId = `${target.platform.id}::${target.name}`;
+    const modelUniqueId = target.tag
+      ? `${target.platform.id}::${target.name}::${target.tag}`
+      : `${target.platform.id}::${target.name}`;
     const files = await readdir(target.dir);
     const jsonFiles = files.filter((f) => f.startsWith("results-") && f.endsWith(".json"));
 
@@ -144,6 +165,7 @@ async function main() {
         id: modelUniqueId,
         platformId: target.platform.id,
         name: target.name,
+        tag: target.tag,
         totalTasks,
         passedTasks,
         successRate: passedTasks / totalTasks,
