@@ -122,6 +122,15 @@ ${task.prompt}`;
       }
     }
 
+    const lastAssistant = [...session.messages].reverse().find(m => m.role === "assistant") as any;
+    if (lastAssistant && lastAssistant.stopReason === "error") {
+      const errorMsg = lastAssistant.errorMessage || "Unknown error";
+      const isConnectionError = /connection|fetch failed|socket|refused|lost|connect|timeout|timed out|500|502|503|504/i.test(errorMsg);
+      if (isConnectionError) {
+        throw new Error(`Inference backend is unreachable or crashed: ${errorMsg}`);
+      }
+    }
+
     const duration = Date.now() - start;
     console.log(`\n--- Agent finished in ${duration}ms ---\n`);
 
