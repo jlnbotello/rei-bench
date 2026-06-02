@@ -97,6 +97,11 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
 
     console.log(`[INFO] Agent resolved to model: ${session.model?.provider}/${session.model?.id}`);
 
+    let lastToolName = "";
+    let lastToolArgs = "";
+    let repeatedToolCount = 0;
+    let loopDetected = false;
+
     session.subscribe((event) => {
       if (event.type === "message_update" && event.assistantMessageEvent) {
         if (event.assistantMessageEvent.type === "text_delta") {
@@ -108,6 +113,21 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
         let argsStr = "";
         try {
           argsStr = JSON.stringify(event.args);
+          
+          if (argsStr === lastToolArgs && event.toolName === lastToolName) {
+            repeatedToolCount++;
+          } else {
+            repeatedToolCount = 1;
+            lastToolName = event.toolName;
+            lastToolArgs = argsStr;
+          }
+
+          if (repeatedToolCount >= 5) {
+            console.warn(`\n[WARN] Loop detected! Tool ${event.toolName} called ${repeatedToolCount} times with same arguments.`);
+            loopDetected = true;
+            session.abort();
+          }
+
           if (argsStr.length > 200) argsStr = argsStr.substring(0, 200) + "...";
         } catch (e) { }
         console.log(`\n[AGENT] Started using tool: ${event.toolName} with args: ${argsStr}`);
@@ -148,18 +168,32 @@ ${task.prompt}`;
     });
 
     let timedOut = false;
-    try {
-      await Promise.race([
-        session.prompt(agentPrompt),
-        timeoutPromise
-      ]);
-    } catch (err: any) {
-      if (err.message === "AGENT_TIMEOUT") {
-        console.error(`\n[ERROR] Agent execution timed out after ${timeoutMin} minutes. Aborting...`);
-        await session.abort();
-        timedOut = true;
-      } else {
-        throw err;
+    let currentPrompt = agentPrompt;
+    let maxLoops = 5;
+    
+    while (!timedOut && maxLoops > 0) {
+      try {
+        await Promise.race([
+          session.prompt(currentPrompt),
+          timeoutPromise
+        ]);
+        break; // Finished successfully
+      } catch (err: any) {
+        if (err.message === "AGENT_TIMEOUT") {
+          console.error(`\n[ERROR] Agent execution timed out after ${timeoutMin} minutes. Aborting...`);
+          await session.abort();
+          timedOut = true;
+        } else if (loopDetected) {
+          console.log(`\n[INFO] Recovering from tool loop... Prompting agent to try something else.`);
+          loopDetected = false;
+          repeatedToolCount = 0;
+          lastToolName = "";
+          lastToolArgs = "";
+          currentPrompt = `You are repeatedly calling the exact same tool with the same arguments. This is a loop. Please try a different approach, use different arguments, or if you have enough information, implement the fix.`;
+          maxLoops--;
+        } else {
+          throw err;
+        }
       }
     }
 
