@@ -127,11 +127,11 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
 
     console.log(`\n--- Agent output ---`);
     const start = Date.now();
-    const agentPrompt = `You are a benchmark agent. The target repository has ALREADY been cloned into your CURRENT WORKING DIRECTORY. 
+    const agentPrompt = `You are an expert AI coding assistant. The target repository has ALREADY been cloned into your CURRENT WORKING DIRECTORY (\`${tmpDir}\`). 
 
 CRITICAL INSTRUCTIONS:
 1. Do NOT use \`git clone\` or download any repositories. The code is already here.
-2. ALL your work (fixes and tests) must be done STRICTLY within your current working directory.
+2. ALL your work (fixes and tests) must be done STRICTLY within your current working directory. Use relative paths (e.g., \`.\`) instead of absolute paths.
 3. Do NOT explore, read, or modify files outside of your current working directory.
 4. Focus only on fixing the issue described below and verifying your fix with tests.
 
