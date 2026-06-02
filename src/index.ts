@@ -122,7 +122,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
             lastToolArgs = argsStr;
           }
 
-          if (repeatedToolCount >= 5) {
+          if (repeatedToolCount >= 3) {
             console.warn(`\n[WARN] Loop detected! Tool ${event.toolName} called ${repeatedToolCount} times with same arguments.`);
             loopDetected = true;
             session.abort();
