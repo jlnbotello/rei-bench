@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
     git \
     python3 \
     python3-pip \
-    python3-setuptools \
     nodejs \
     npm \
     curl \
@@ -18,3 +17,6 @@ RUN git config --global user.email "bench@pi.local" && \
     git config --global user.name "Pi Benchmarker"
 
 WORKDIR /pi-bench
+
+# Fast appended layer to prevent busting the heavy cache above
+RUN apt-get update && apt-get install -y python3-setuptools && rm -rf /var/lib/apt/lists/*
