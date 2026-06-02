@@ -188,11 +188,11 @@ ${task.prompt}`;
             timedOut = true;
           } else if (loopDetected || err.message === "LOOP_DETECTED" || err.name === "AbortError" || err.message?.includes("abort")) {
             console.log(`\n[INFO] Recovering from tool loop... Prompting agent to try something else.`);
+            currentPrompt = `SYSTEM WARNING: You are repeatedly calling the tool \`${lastToolName}\` with the exact same arguments: \`${lastToolArgs}\`. This is an infinite loop. The last execution was aborted. You MUST try a completely different approach, use different arguments, or implement the fix now.\n\n[Tool results are returned. If the result is sufficient, answer now.]`;
             loopDetected = false;
             repeatedToolCount = 0;
             lastToolName = "";
             lastToolArgs = "";
-            currentPrompt = `You are repeatedly calling the exact same tool with the same arguments. This is a loop. Please try a different approach, use different arguments, or if you have enough information, implement the fix.`;
             maxLoops--;
           } else {
             throw err;
@@ -227,7 +227,7 @@ ${task.prompt}`;
 
     if (!diff.trim() && !timedOut && (!lastAssistant || lastAssistant.stopReason !== "error")) {
       console.log(`\n[INFO] Agent finished with no changes. Prompting to continue...`);
-      const reminderPrompt = `You are running as part of an automated pipeline, as such you MUST complete the task you have been assigned and fully implement it now by editing all the required files in the workspace, autonomously and without any further interaction.\n\nReminder of your task:\n${task.prompt}`;
+      const reminderPrompt = `You are running as part of an automated pipeline, as such you MUST complete the task you have been assigned and fully implement it now by editing all the required files in the workspace, autonomously and without any further interaction.\n\nReminder of your task:\n${task.prompt}\n\n[Tool results are returned. If the result is sufficient, answer now.]`;
 
       try {
         await runPromptWithLoopDetection(reminderPrompt);
