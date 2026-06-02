@@ -81,16 +81,29 @@ To ensure the coding agent can safely run `npm install`, arbitrary tests, or cod
 ```
 *Note: To guarantee reproducibility and isolation, the Docker container runs completely decoupled from your host's `~/.pi` configuration. To provide API keys (like `GEMINI_API_KEY` for the judge), simply create a `.env` file in the root `pi-bench/` directory. `run-docker.sh` automatically maps this `.env` into the container.*
 
-### Configuring Models
+### Configuring Models & Engines
 
-By default, the script resolves models securely using standard environment variables (e.g., `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) loaded from your `.env` file. Since the container runs with `--network host`, local models served at `localhost:8080` (e.g., `llama.cpp`) are discovered automatically without any configuration. You can override the port by passing `--port <port>`.
+`pi-bench` uses two different types of models during a run: the **Agent Model** (which attempts to solve the coding task) and the **Judge Model** (which evaluates the agent's patch).
 
-If you need to configure custom API endpoints (e.g., an OpenAI-compatible server on a non-standard port), you can place a standard `models.json` file inside the `pi-bench/` root directory. The script will automatically detect and load it.
+#### Agent Models (Local Inference)
+`pi-bench` is designed to benchmark local inference engines. Because the Docker container runs with `--network host`, it automatically connects to your host machine's local servers.
 
-You can explicitly override the model for the agent and the judge using CLI flags. Additionally, you can provide a `--platform` flag to automatically save the results directly into the `benchmark_results/<platform>/` folder. If you want to append a suffix to the auto-detected model name (e.g., to distinguish MTP runs), use `--model-tag`:
+We support the following engines out of the box:
+- **`llama.cpp`** (Default): Connects to `localhost:8080`.
+- **`ds4`**: Connects to `localhost:8000`.
+
+You can switch the engine using the `--engine <name>` flag. If your local server runs on a non-standard port, use the `--port <port>` flag to override the default. If you need to configure custom API endpoints or model parameters (like max tokens or context windows), edit the `models.json` file inside the `pi-bench/` root directory.
+
+#### Judge Models (Remote APIs)
+To use a hosted LLM as the judge (like Gemini or Claude), you must provide your API keys. Create a `.env` file in the root `pi-bench/` directory and add your standard keys (e.g., `GEMINI_API_KEY=...`, `ANTHROPIC_API_KEY=...`). The `run-docker.sh` script automatically passes this environment file into the sandbox.
+
+#### Running with CLI Flags
+You can explicitly define both the agent and judge models via CLI flags. Additionally, you can provide a `--platform` flag to automatically save the results directly into the `benchmark_results/<platform>/` folder. If you want to append a suffix to the auto-detected model name (e.g., to distinguish MTP runs), use `--model-tag`:
 
 ```bash
 ./run-docker.sh tasks/verified-mini/ \
+  --engine ds4 \
+  --port 8000 \
   --judge-model google/gemini-3.1-pro-preview \
   --platform strix-halo \
   --model-tag mtp \
