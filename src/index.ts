@@ -136,6 +136,7 @@ CRITICAL INSTRUCTIONS:
 4. Focus only on fixing the issue described below and verifying your fix with tests.
 5. You are running completely autonomously. There is NO human interaction. You must independently investigate, write the fix, verify it, and then STOP calling tools when you are done.
 6. If you find yourself repeatedly running the exact same commands or reading the same files without making progress, STOP looping. Formulate a new plan or implement a fix based on what you already know.
+7. If you attempt to write a test script and it fails due to environment issues (like missing modules), do NOT get stuck trying to fix the environment. If you know how to fix the source code based on the issue description, apply the patch directly using your editing tools.
 
 Issue Description:
 ${task.prompt}`;
