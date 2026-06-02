@@ -22,7 +22,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
   console.log(`\n======================================================`);
   console.log(`[INFO] Starting benchmark for task file: ${taskFile}`);
   console.log(`======================================================\n`);
-  
+
   const tmpDir = await mkdtemp(join(tmpdir(), "pi-bench-"));
   console.log(`[INFO] Working directory: ${tmpDir}`);
 
@@ -36,7 +36,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
 
     console.log(`[INFO] Initializing agent session...`);
     const authStorage = AuthStorage.create();
-    
+
     const localModelsPath = join(process.cwd(), "models.json");
     let modelRegistry;
     if (existsSync(localModelsPath)) {
@@ -72,7 +72,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
         modelRegistry = ModelRegistry.create(authStorage);
       }
     }
-    
+
     let resolvedAgentModel;
     if (agentModelReq) {
       resolvedAgentModel = modelRegistry.find(agentModelReq.provider, agentModelReq.id);
@@ -94,7 +94,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
       modelRegistry,
       model: resolvedAgentModel,
     });
-    
+
     console.log(`[INFO] Agent resolved to model: ${session.model?.provider}/${session.model?.id}`);
 
     session.subscribe((event) => {
@@ -109,7 +109,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
         try {
           argsStr = JSON.stringify(event.args);
           if (argsStr.length > 200) argsStr = argsStr.substring(0, 200) + "...";
-        } catch (e) {}
+        } catch (e) { }
         console.log(`\n[AGENT] Started using tool: ${event.toolName} with args: ${argsStr}`);
       } else if (event.type === "tool_execution_end") {
         console.log(`[AGENT] Finished tool: ${event.toolName}`);
@@ -118,7 +118,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
             let resStr = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
             if (resStr.length > 500) resStr = resStr.substring(0, 500) + "... [TRUNCATED]";
             console.log(`[AGENT] Tool result: ${resStr}`);
-          } catch (e) {}
+          } catch (e) { }
         }
       } else if (event.type === "auto_retry_start") {
         console.warn(`\n[WARN] Agent retrying (${event.attempt}/${event.maxAttempts}): ${event.errorMessage}`);
@@ -137,6 +137,8 @@ CRITICAL INSTRUCTIONS:
 5. You are running completely autonomously. There is NO human interaction. You must independently investigate, write the fix, verify it, and then STOP calling tools when you are done.
 6. If you find yourself repeatedly running the exact same commands or reading the same files without making progress, STOP looping. Formulate a new plan or implement a fix based on what you already know.
 7. If you attempt to write a test script and it fails due to environment issues (like missing modules), do NOT get stuck trying to fix the environment. If you know how to fix the source code based on the issue description, apply the patch directly using your editing tools.
+8. Prefer to use the dedicated, built-in tools (like 'read', 'edit', 'write') for reading and modifying files. Only use 'bash' as a fallback if your default tools fail, or when you need to do something that you can't do with the built-in tools.
+9. You are to complete the task and produce changes editing the files in this project. Do not stop without editing the files required to complete the task!
 
 Issue Description:
 ${task.prompt}`;
@@ -186,14 +188,14 @@ ${task.prompt}`;
     let testOutput = "";
     let testExitCode: number | null = null;
     if (task.testPatch) {
-       console.log(`[INFO] Applying test patch...`);
-       try {
-         const patchPath = join(tmpDir, "test.patch");
-         await writeFile(patchPath, task.testPatch);
-         await execAsync(`git apply test.patch`, { cwd: tmpDir });
-       } catch (e) {
-         console.warn(`[WARN] Failed to apply test patch:`, e);
-       }
+      console.log(`[INFO] Applying test patch...`);
+      try {
+        const patchPath = join(tmpDir, "test.patch");
+        await writeFile(patchPath, task.testPatch);
+        await execAsync(`git apply test.patch`, { cwd: tmpDir });
+      } catch (e) {
+        console.warn(`[WARN] Failed to apply test patch:`, e);
+      }
     }
 
     if (task.testCommand) {
@@ -371,7 +373,7 @@ async function main() {
 
   console.log(`[INFO] Found ${taskFiles.length} tasks to run.`);
   const timeoutMin = parseInt(values.timeout as string, 10) || 30;
-  
+
   const modelTag = values["model-tag"] as string | undefined;
   const engine = values.engine as string;
   let outputDir = "results";
@@ -419,7 +421,7 @@ async function main() {
       const content = await readFile(f, "utf-8");
       const task = JSON.parse(content);
       const resultFile = join(outputDir, `results-${task.id}.json`);
-      
+
       try {
         const existing = await readFile(resultFile, "utf-8");
         const res = JSON.parse(existing);
@@ -431,7 +433,7 @@ async function main() {
       } catch (e) {
         // file doesn't exist, proceed
       }
-    } catch(e) {
+    } catch (e) {
       console.warn(`[WARN] Could not pre-parse task file ${f} for resume check.`);
     }
 
