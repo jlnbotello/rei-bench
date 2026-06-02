@@ -47,7 +47,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
         if (modelsData.providers && modelsData.providers[engine] && modelsData.providers[engine].baseUrl) {
           modelsData.providers[engine].baseUrl = modelsData.providers[engine].baseUrl.replace(/:\d+/, `:${port}`);
         }
-        const tmpModelsPath = join(tmpDir, "models.json");
+        const tmpModelsPath = tmpDir + "-models.json";
         await writeFile(tmpModelsPath, JSON.stringify(modelsData));
         modelRegistry = ModelRegistry.create(authStorage, tmpModelsPath);
       } else {
@@ -65,7 +65,7 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
             }
           }
         };
-        const tmpModelsPath = join(tmpDir, "models.json");
+        const tmpModelsPath = tmpDir + "-models.json";
         await writeFile(tmpModelsPath, JSON.stringify(modelsData));
         modelRegistry = ModelRegistry.create(authStorage, tmpModelsPath);
       } else {
