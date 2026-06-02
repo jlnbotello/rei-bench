@@ -134,6 +134,8 @@ CRITICAL INSTRUCTIONS:
 2. ALL your work (fixes and tests) must be done STRICTLY within your current working directory. Use relative paths (e.g., \`.\`) instead of absolute paths.
 3. Do NOT explore, read, or modify files outside of your current working directory.
 4. Focus only on fixing the issue described below and verifying your fix with tests.
+5. You are running completely autonomously. There is NO human interaction. You must independently investigate, write the fix, verify it, and then STOP calling tools when you are done.
+6. If you find yourself repeatedly running the exact same commands or reading the same files without making progress, STOP looping. Formulate a new plan or implement a fix based on what you already know.
 
 Issue Description:
 ${task.prompt}`;
