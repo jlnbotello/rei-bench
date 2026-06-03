@@ -5,6 +5,15 @@
 ## Objective
 Analyze the transcripts of `DeepSeek-V4-Flash` across three different configurations (Q2 on ds4-hip, Q4 on ds4-hip, and FP4 on OpenRouter) to understand the differences in tool-calling behavior, specifically investigating the "looping" failure mode observed in the `ds4-hip` engine runs.
 
+## Configuration Details
+The following three model configurations were analyzed:
+
+| Configuration Label | Full Model / Quant Name | Engine | Platform / Hardware |
+| :--- | :--- | :--- | :--- |
+| **Q2 (ds4-hip)** | `DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2` | ds4-hip | gfx1151 / Strix Halo (1 node) |
+| **Q4 (ds4-hip)** | `DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix` | ds4-hip | gfx1151 / Strix Halo (2 nodes) |
+| **FP4 (OpenRouter)** | `deepseek/deepseek-v4-flash` (FP4) | OpenRouter API | Cloud Infrastructure |
+
 ## Data Gathered
 I analyzed transcripts from 4 common tasks (`django__django-11790`, `django__django-11815`, `django__django-11848`, `django__django-11880`) across the three configurations.
 
