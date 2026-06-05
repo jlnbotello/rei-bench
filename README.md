@@ -80,14 +80,6 @@ Local providers are configured in [models.json](file:///home/kyuz0/Documents/Pro
 
 When using a local provider, you do not need to specify a model name via `--model`. `pi-bench` will automatically query the local provider's `/v1/models` endpoint to retrieve the active model name and format the results directory accordingly. Whatever model your local server is currently running will be used.
 
-**Example: Running with `ds4`**
-```bash
-./run-swe-bench.sh tasks/verified-mini/ \
-  --provider ds4 \
-  --judge-model google/gemini-3.1-pro-preview \
-  --platform strix-halo \
-  --timeout 45
-```
 
 **Example: Running with `llama.cpp`**
 ```bash
@@ -95,6 +87,18 @@ When using a local provider, you do not need to specify a model name via `--mode
   --provider llama.cpp \
   --judge-model google/gemini-3.1-pro-preview \
   --platform strix-halo \
+  --rocm-version 7.2.4 \
+  --timeout 45
+```
+
+
+**Example: Running with `ds4`**
+```bash
+./run-swe-bench.sh tasks/verified-mini/ \
+  --provider ds4 \
+  --judge-model google/gemini-3.1-pro-preview \
+  --platform strix-halo \
+  --rocm-version 7.2.4 \
   --timeout 45
 ```
 
@@ -181,7 +185,9 @@ bun run src/index.ts tasks/curated/easy.json
   --provider ds4 --port 9000 \
   --judge-model google/gemini-3.1-pro-preview \
   --platform strix-halo \
+  --rocm-version 7.2.4 \
   --timeout 45
+
 
 # OpenRouter cloud
 ./run-swe-bench.sh tasks/verified-mini/ \
