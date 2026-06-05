@@ -188,7 +188,6 @@ bun run src/index.ts tasks/curated/easy.json
   --rocm-version 7.2.4 \
   --timeout 45
 
-
 # OpenRouter cloud
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider openrouter --model deepseek/deepseek-v4-flash \
