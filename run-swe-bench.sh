@@ -49,6 +49,7 @@ TOTAL=${#TASK_FILES[@]}
 COUNT=0
 PASSED=0
 FAILED=0
+RESULTS_DIR=""
 
 echo "========================================================"
 echo "[INFO] SWE-bench Runner — $TOTAL tasks queued"
@@ -67,6 +68,8 @@ for task_file in "${TASK_FILES[@]}"; do
 
   REL_TASK_FILE=$(python3 -c "import os; print(os.path.relpath('$(realpath "$task_file")', '$(realpath "$PI_BENCH_DIR")'))")
 
+  # Run container and tee output to a temp file so we can extract the results dir
+  LOGFILE=$(mktemp /tmp/pi-bench-log.XXXXXX)
   docker run --init -it --rm --network host $ENV_ARGS \
     -v "$PI_BENCH_DIR:/pi-bench:z" \
     -v "pi-bench-bun-cache:/root/.bun" \
@@ -96,9 +99,16 @@ for task_file in "${TASK_FILES[@]}"; do
 
       # Run the benchmark
       bun run src/index.ts $REL_TASK_FILE $EXTRA_ARGS
-    "
+    " 2>&1 | tee "$LOGFILE"
 
-  EXIT_CODE=$?
+  EXIT_CODE=${PIPESTATUS[0]}
+
+  # Capture the results directory from container output (first occurrence only)
+  if [ -z "$RESULTS_DIR" ]; then
+    RESULTS_DIR=$(grep -m1 'Saving results to directory:' "$LOGFILE" | sed 's/.*Saving results to directory: //' | tr -d '\r' || true)
+  fi
+  rm -f "$LOGFILE"
+
   if [ $EXIT_CODE -eq 0 ]; then
     PASSED=$((PASSED + 1))
   else
@@ -112,3 +122,50 @@ echo "========================================================"
 echo "[INFO] SWE-bench Runner Complete!"
 echo "[INFO] Tasks: $TOTAL | Succeeded: $PASSED | Failed: $FAILED"
 echo "========================================================"
+
+# Generate aggregate summary.json from all individual result files.
+# Each container writes its own summary.json with only 1 task, overwriting the previous.
+# This step reads all results-*.json and builds the real aggregate.
+if [ -n "$RESULTS_DIR" ] && [ -d "$RESULTS_DIR" ]; then
+  echo "[INFO] Generating aggregate summary from $RESULTS_DIR ..."
+  python3 -c "
+import json, glob, os, sys
+
+results_dir = sys.argv[1]
+result_files = sorted(glob.glob(os.path.join(results_dir, 'results-*.json')))
+
+if not result_files:
+    print('[WARN] No result files found, skipping summary generation.')
+    sys.exit(0)
+
+results = []
+passed = 0
+total_duration = 0
+
+for f in result_files:
+    with open(f) as fh:
+        r = json.load(fh)
+        results.append(r)
+        if r.get('judgeScore') == 1:
+            passed += 1
+        total_duration += r.get('durationMs', 0)
+
+summary = {
+    'totalTasks': len(results),
+    'passedTasks': passed,
+    'passRate': passed / len(results) if results else 0,
+    'totalDurationMs': total_duration,
+    'averageDurationMs': total_duration / len(results) if results else 0,
+    'results': results
+}
+
+summary_path = os.path.join(results_dir, 'summary.json')
+with open(summary_path, 'w') as fh:
+    json.dump(summary, fh, indent=2)
+
+print(f'[INFO] Aggregate summary: {passed}/{len(results)} passed ({summary[\"passRate\"]*100:.1f}%)')
+print(f'[INFO] Summary saved to {summary_path}')
+" "$RESULTS_DIR"
+else
+  echo "[WARN] Could not determine results directory for aggregate summary."
+fi
