@@ -1,0 +1,1533 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "You are an expert AI coding assistant. The target repository has ALREADY been cloned into your CURRENT WORKING DIRECTORY (`/testbed`). \n\nCRITICAL INSTRUCTIONS:\n1. Do NOT use `git clone` or download any repositories. The code is already here.\n2. ALL your work (fixes and tests) must be done STRICTLY within your current working directory. Use relative paths (e.g., `.`) instead of absolute paths.\n3. Do NOT explore, read, or modify files outside of your current working directory.\n4. Focus only on fixing the issue described below and verifying your fix with tests.\n5. You are running completely autonomously. There is NO human interaction. You must independently investigate, write the fix, verify it, and then STOP calling tools when you are done.\n6. You are to complete the task and produce changes editing the files in this project. Do not stop without editing the files required to complete the task!\n7. The development environment is already fully configured with the correct Python version and all dependencies pre-installed. Do NOT install packages, create virtual environments, or modify the Python installation. Just focus on understanding and fixing the bug.\n8. If necessary you can write tests or modify existing tests to verify your fix. Avoid running the entire test suite though, if you can only focus on tests that are relevant to the code you're changing to ensure you're not introducing regressions.\n9. Make the MINIMAL changes necessary to fix the issue. Do not refactor unrelated code.\n\nIssue Description:\ndjango.utils.http.parse_http_date two digit year check is incorrect\nDescription\n\t \n\t\t(last modified by Ad Timmering)\n\t \nRFC 850 does not mention this, but in RFC 7231 (and there's something similar in RFC 2822), there's the following quote:\nRecipients of a timestamp value in rfc850-date format, which uses a\ntwo-digit year, MUST interpret a timestamp that appears to be more\nthan 50 years in the future as representing the most recent year in\nthe past that had the same last two digits.\nCurrent logic is hard coded to consider 0-69 to be in 2000-2069, and 70-99 to be 1970-1999, instead of comparing versus the current year.\n"
+      }
+    ],
+    "timestamp": 1780729957897
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user is asking me to fix a bug in Django's `django.utils.http.parse_http_date` function. The issue is about how it handles two-digit years in HTTP date parsing.\n\nLet me first understand the problem:\n1. RFC 7231 states that when parsing a two-digit year, if it appears to be more than 50 years in the future, it should be interpreted as the most recent year in the past with the same last two digits.\n2. The current logic is hardcoded to treat years 0-69 as 2000-2069 and 70-99 as 1970-1999.\n3. The correct behavior should compare against the current year dynamically.\n\nLet me start by finding and examining the relevant code.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "1moTAn1le5ySEd039Keo6dzFtaFAs4iJ",
+        "name": "bash",
+        "arguments": {
+          "command": "find /testbed -type f -name \"*.py\" | xargs grep -l \"parse_http_date\" 2>/dev/null | head -20"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 1976,
+      "output": 230,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 2206,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780729957910,
+    "responseId": "chatcmpl-Q0ZBGM0ERQoFJytTyJBbSIzlFkv9cA6h",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "1moTAn1le5ySEd039Keo6dzFtaFAs4iJ",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "/testbed/django/middleware/http.py\n/testbed/django/utils/cache.py\n/testbed/django/utils/http.py\n/testbed/django/views/static.py\n/testbed/tests/utils_tests/test_http.py\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780729973949
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me read the main implementation of `parse_http_date` in `/testbed/django/utils/http.py`.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "qtDI54O4AqJTGd6m9ObI9c7N9e0LgGWY",
+        "name": "read",
+        "arguments": {
+          "path": "/testbed/django/utils/http.py"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 57,
+      "output": 55,
+      "cacheRead": 2205,
+      "cacheWrite": 0,
+      "totalTokens": 2317,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780729973949,
+    "responseId": "chatcmpl-ARpeDawQYqkyMb86csp46lXAS4RUIPie",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "qtDI54O4AqJTGd6m9ObI9c7N9e0LgGWY",
+    "toolName": "read",
+    "content": [
+      {
+        "type": "text",
+        "text": "import base64\nimport calendar\nimport datetime\nimport re\nimport unicodedata\nimport warnings\nfrom binascii import Error as BinasciiError\nfrom email.utils import formatdate\nfrom urllib.parse import (\n    ParseResult, SplitResult, _coerce_args, _splitnetloc, _splitparams, quote,\n    quote_plus, scheme_chars, unquote, unquote_plus,\n    urlencode as original_urlencode, uses_params,\n)\n\nfrom django.core.exceptions import TooManyFieldsSent\nfrom django.utils.datastructures import MultiValueDict\nfrom django.utils.deprecation import RemovedInDjango40Warning\nfrom django.utils.functional import keep_lazy_text\n\n# based on RFC 7232, Appendix C\nETAG_MATCH = re.compile(r'''\n    \\A(      # start of string and capture group\n    (?:W/)?  # optional weak indicator\n    \"        # opening quote\n    [^\"]*    # any sequence of non-quote characters\n    \"        # end quote\n    )\\Z      # end of string and capture group\n''', re.X)\n\nMONTHS = 'jan feb mar apr may jun jul aug sep oct nov dec'.split()\n__D = r'(?P<day>\\d{2})'\n__D2 = r'(?P<day>[ \\d]\\d)'\n__M = r'(?P<mon>\\w{3})'\n__Y = r'(?P<year>\\d{4})'\n__Y2 = r'(?P<year>\\d{2})'\n__T = r'(?P<hour>\\d{2}):(?P<min>\\d{2}):(?P<sec>\\d{2})'\nRFC1123_DATE = re.compile(r'^\\w{3}, %s %s %s %s GMT$' % (__D, __M, __Y, __T))\nRFC850_DATE = re.compile(r'^\\w{6,9}, %s-%s-%s %s GMT$' % (__D, __M, __Y2, __T))\nASCTIME_DATE = re.compile(r'^\\w{3} %s %s %s %s$' % (__M, __D2, __T, __Y))\n\nRFC3986_GENDELIMS = \":/?#[]@\"\nRFC3986_SUBDELIMS = \"!$&'()*+,;=\"\n\nFIELDS_MATCH = re.compile('[&;]')\n\n\n@keep_lazy_text\ndef urlquote(url, safe='/'):\n    \"\"\"\n    A legacy compatibility wrapper to Python's urllib.parse.quote() function.\n    (was used for unicode handling on Python 2)\n    \"\"\"\n    warnings.warn(\n        'django.utils.http.urlquote() is deprecated in favor of '\n        'urllib.parse.quote().',\n        RemovedInDjango40Warning, stacklevel=2,\n    )\n    return quote(url, safe)\n\n\n@keep_lazy_text\ndef urlquote_plus(url, safe=''):\n    \"\"\"\n    A legacy compatibility wrapper to Python's urllib.parse.quote_plus()\n    function. (was used for unicode handling on Python 2)\n    \"\"\"\n    warnings.warn(\n        'django.utils.http.urlquote_plus() is deprecated in favor of '\n        'urllib.parse.quote_plus(),',\n        RemovedInDjango40Warning, stacklevel=2,\n    )\n    return quote_plus(url, safe)\n\n\n@keep_lazy_text\ndef urlunquote(quoted_url):\n    \"\"\"\n    A legacy compatibility wrapper to Python's urllib.parse.unquote() function.\n    (was used for unicode handling on Python 2)\n    \"\"\"\n    warnings.warn(\n        'django.utils.http.urlunquote() is deprecated in favor of '\n        'urllib.parse.unquote().',\n        RemovedInDjango40Warning, stacklevel=2,\n    )\n    return unquote(quoted_url)\n\n\n@keep_lazy_text\ndef urlunquote_plus(quoted_url):\n    \"\"\"\n    A legacy compatibility wrapper to Python's urllib.parse.unquote_plus()\n    function. (was used for unicode handling on Python 2)\n    \"\"\"\n    warnings.warn(\n        'django.utils.http.urlunquote_plus() is deprecated in favor of '\n        'urllib.parse.unquote_plus().',\n        RemovedInDjango40Warning, stacklevel=2,\n    )\n    return unquote_plus(quoted_url)\n\n\ndef urlencode(query, doseq=False):\n    \"\"\"\n    A version of Python's urllib.parse.urlencode() function that can operate on\n    MultiValueDict and non-string values.\n    \"\"\"\n    if isinstance(query, MultiValueDict):\n        query = query.lists()\n    elif hasattr(query, 'items'):\n        query = query.items()\n    query_params = []\n    for key, value in query:\n        if value is None:\n            raise TypeError(\n                \"Cannot encode None for key '%s' in a query string. Did you \"\n                \"mean to pass an empty string or omit the value?\" % key\n            )\n        elif not doseq or isinstance(value, (str, bytes)):\n            query_val = value\n        else:\n            try:\n                itr = iter(value)\n            except TypeError:\n                query_val = value\n            else:\n                # Consume generators and iterators, when doseq=True, to\n                # work around https://bugs.python.org/issue31706.\n                query_val = []\n                for item in itr:\n                    if item is None:\n                        raise TypeError(\n                            \"Cannot encode None for key '%s' in a query \"\n                            \"string. Did you mean to pass an empty string or \"\n                            \"omit the value?\" % key\n                        )\n                    elif not isinstance(item, bytes):\n                        item = str(item)\n                    query_val.append(item)\n        query_params.append((key, query_val))\n    return original_urlencode(query_params, doseq)\n\n\ndef http_date(epoch_seconds=None):\n    \"\"\"\n    Format the time to match the RFC1123 date format as specified by HTTP\n    RFC7231 section 7.1.1.1.\n\n    `epoch_seconds` is a floating point number expressed in seconds since the\n    epoch, in UTC - such as that outputted by time.time(). If set to None, it\n    defaults to the current time.\n\n    Output a string in the format 'Wdy, DD Mon YYYY HH:MM:SS GMT'.\n    \"\"\"\n    return formatdate(epoch_seconds, usegmt=True)\n\n\ndef parse_http_date(date):\n    \"\"\"\n    Parse a date format as specified by HTTP RFC7231 section 7.1.1.1.\n\n    The three formats allowed by the RFC are accepted, even if only the first\n    one is still in widespread use.\n\n    Return an integer expressed in seconds since the epoch, in UTC.\n    \"\"\"\n    # email.utils.parsedate() does the job for RFC1123 dates; unfortunately\n    # RFC7231 makes it mandatory to support RFC850 dates too. So we roll\n    # our own RFC-compliant parsing.\n    for regex in RFC1123_DATE, RFC850_DATE, ASCTIME_DATE:\n        m = regex.match(date)\n        if m is not None:\n            break\n    else:\n        raise ValueError(\"%r is not in a valid HTTP date format\" % date)\n    try:\n        year = int(m.group('year'))\n        if year < 100:\n            if year < 70:\n                year += 2000\n            else:\n                year += 1900\n        month = MONTHS.index(m.group('mon').lower()) + 1\n        day = int(m.group('day'))\n        hour = int(m.group('hour'))\n        min = int(m.group('min'))\n        sec = int(m.group('sec'))\n        result = datetime.datetime(year, month, day, hour, min, sec)\n        return calendar.timegm(result.utctimetuple())\n    except Exception as exc:\n        raise ValueError(\"%r is not a valid date\" % date) from exc\n\n\ndef parse_http_date_safe(date):\n    \"\"\"\n    Same as parse_http_date, but return None if the input is invalid.\n    \"\"\"\n    try:\n        return parse_http_date(date)\n    except Exception:\n        pass\n\n\n# Base 36 functions: useful for generating compact URLs\n\ndef base36_to_int(s):\n    \"\"\"\n    Convert a base 36 string to an int. Raise ValueError if the input won't fit\n    into an int.\n    \"\"\"\n    # To prevent overconsumption of server resources, reject any\n    # base36 string that is longer than 13 base36 digits (13 digits\n    # is sufficient to base36-encode any 64-bit integer)\n    if len(s) > 13:\n        raise ValueError(\"Base36 input too large\")\n    return int(s, 36)\n\n\ndef int_to_base36(i):\n    \"\"\"Convert an integer to a base36 string.\"\"\"\n    char_set = '0123456789abcdefghijklmnopqrstuvwxyz'\n    if i < 0:\n        raise ValueError(\"Negative base36 conversion input.\")\n    if i < 36:\n        return char_set[i]\n    b36 = ''\n    while i != 0:\n        i, n = divmod(i, 36)\n        b36 = char_set[n] + b36\n    return b36\n\n\ndef urlsafe_base64_encode(s):\n    \"\"\"\n    Encode a bytestring to a base64 string for use in URLs. Strip any trailing\n    equal signs.\n    \"\"\"\n    return base64.urlsafe_b64encode(s).rstrip(b'\\n=').decode('ascii')\n\n\ndef urlsafe_base64_decode(s):\n    \"\"\"\n    Decode a base64 encoded string. Add back any trailing equal signs that\n    might have been stripped.\n    \"\"\"\n    s = s.encode()\n    try:\n        return base64.urlsafe_b64decode(s.ljust(len(s) + len(s) % 4, b'='))\n    except (LookupError, BinasciiError) as e:\n        raise ValueError(e)\n\n\ndef parse_etags(etag_str):\n    \"\"\"\n    Parse a string of ETags given in an If-None-Match or If-Match header as\n    defined by RFC 7232. Return a list of quoted ETags, or ['*'] if all ETags\n    should be matched.\n    \"\"\"\n    if etag_str.strip() == '*':\n        return ['*']\n    else:\n        # Parse each ETag individually, and return any that are valid.\n        etag_matches = (ETAG_MATCH.match(etag.strip()) for etag in etag_str.split(','))\n        return [match.group(1) for match in etag_matches if match]\n\n\ndef quote_etag(etag_str):\n    \"\"\"\n    If the provided string is already a quoted ETag, return it. Otherwise, wrap\n    the string in quotes, making it a strong ETag.\n    \"\"\"\n    if ETAG_MATCH.match(etag_str):\n        return etag_str\n    else:\n        return '\"%s\"' % etag_str\n\n\ndef is_same_domain(host, pattern):\n    \"\"\"\n    Return ``True`` if the host is either an exact match or a match\n    to the wildcard pattern.\n\n    Any pattern beginning with a period matches a domain and all of its\n    subdomains. (e.g. ``.example.com`` matches ``example.com`` and\n    ``foo.example.com``). Anything else is an exact string match.\n    \"\"\"\n    if not pattern:\n        return False\n\n    pattern = pattern.lower()\n    return (\n        pattern[0] == '.' and (host.endswith(pattern) or host == pattern[1:]) or\n        pattern == host\n    )\n\n\ndef url_has_allowed_host_and_scheme(url, allowed_hosts, require_https=False):\n    \"\"\"\n    Return ``True`` if the url uses an allowed host and a safe scheme.\n\n    Always return ``False`` on an empty url.\n\n    If ``require_https`` is ``True``, only 'https' will be considered a valid\n    scheme, as opposed to 'http' and 'https' with the default, ``False``.\n\n    Note: \"True\" doesn't entail that a URL is \"safe\". It may still be e.g.\n    quoted incorrectly. Ensure to also use django.utils.encoding.iri_to_uri()\n    on the path component of untrusted URLs.\n    \"\"\"\n    if url is not None:\n        url = url.strip()\n    if not url:\n        return False\n    if allowed_hosts is None:\n        allowed_hosts = set()\n    elif isinstance(allowed_hosts, str):\n        allowed_hosts = {allowed_hosts}\n    # Chrome treats \\ completely as / in paths but it could be part of some\n    # basic auth credentials so we need to check both URLs.\n    return (\n        _url_has_allowed_host_and_scheme(url, allowed_hosts, require_https=require_https) and\n        _url_has_allowed_host_and_scheme(url.replace('\\\\', '/'), allowed_hosts, require_https=require_https)\n    )\n\n\ndef is_safe_url(url, allowed_hosts, require_https=False):\n    warnings.warn(\n        'django.utils.http.is_safe_url() is deprecated in favor of '\n        'url_has_allowed_host_and_scheme().',\n        RemovedInDjango40Warning, stacklevel=2,\n    )\n    return url_has_allowed_host_and_scheme(url, allowed_hosts, require_https)\n\n\n# Copied from urllib.parse.urlparse() but uses fixed urlsplit() function.\ndef _urlparse(url, scheme='', allow_fragments=True):\n    \"\"\"Parse a URL into 6 components:\n    <scheme>://<netloc>/<path>;<params>?<query>#<fragment>\n    Return a 6-tuple: (scheme, netloc, path, params, query, fragment).\n    Note that we don't break the components up in smaller bits\n    (e.g. netloc is a single string) and we don't expand % escapes.\"\"\"\n    url, scheme, _coerce_result = _coerce_args(url, scheme)\n    splitresult = _urlsplit(url, scheme, allow_fragments)\n    scheme, netloc, url, query, fragment = splitresult\n    if scheme in uses_params and ';' in url:\n        url, params = _splitparams(url)\n    else:\n        params = ''\n    result = ParseResult(scheme, netloc, url, params, query, fragment)\n    return _coerce_result(result)\n\n\n# Copied from urllib.parse.urlsplit() with\n# https://github.com/python/cpython/pull/661 applied.\ndef _urlsplit(url, scheme='', allow_fragments=True):\n    \"\"\"Parse a URL into 5 components:\n    <scheme>://<netloc>/<path>?<query>#<fragment>\n    Return a 5-tuple: (scheme, netloc, path, query, fragment).\n    Note that we don't break the components up in smaller bits\n    (e.g. netloc is a single string) and we don't expand % escapes.\"\"\"\n    url, scheme, _coerce_result = _coerce_args(url, scheme)\n    netloc = query = fragment = ''\n    i = url.find(':')\n    if i > 0:\n        for c in url[:i]:\n            if c not in scheme_chars:\n                break\n        else:\n            scheme, url = url[:i].lower(), url[i + 1:]\n\n    if url[:2] == '//':\n        netloc, url = _splitnetloc(url, 2)\n        if (('[' in netloc and ']' not in netloc) or\n                (']' in netloc and '[' not in netloc)):\n            raise ValueError(\"Invalid IPv6 URL\")\n    if allow_fragments and '#' in url:\n        url, fragment = url.split('#', 1)\n    if '?' in url:\n        url, query = url.split('?', 1)\n    v = SplitResult(scheme, netloc, url, query, fragment)\n    return _coerce_result(v)\n\n\ndef _url_has_allowed_host_and_scheme(url, allowed_hosts, require_https=False):\n    # Chrome considers any URL with more than two slashes to be absolute, but\n    # urlparse is not so flexible. Treat any url with three slashes as unsafe.\n    if url.startswith('///'):\n        return False\n    try:\n        url_info = _urlparse(url)\n    except ValueError:  # e.g. invalid IPv6 addresses\n        return False\n    # Forbid URLs like http:///example.com - with a scheme, but without a hostname.\n    # In that URL, example.com is not the hostname but, a path component. However,\n    # Chrome will still consider example.com to be the hostname, so we must not\n    # allow this syntax.\n    if not url_info.netloc and url_info.scheme:\n        return False\n    # Forbid URLs that start with control characters. Some browsers (like\n    # Chrome) ignore quite a few control characters at the start of a\n    # URL and might consider the URL as scheme relative.\n    if unicodedata.category(url[0])[0] == 'C':\n        return False\n    scheme = url_info.scheme\n    # Consider URLs without a scheme (e.g. //example.com/p) to be http.\n    if not url_info.scheme and url_info.netloc:\n        scheme = 'http'\n    valid_schemes = ['https'] if require_https else ['http', 'https']\n    return ((not url_info.netloc or url_info.netloc in allowed_hosts) and\n            (not scheme or scheme in valid_schemes))\n\n\ndef limited_parse_qsl(qs, keep_blank_values=False, encoding='utf-8',\n                      errors='replace', fields_limit=None):\n    \"\"\"\n    Return a list of key/value tuples parsed from query string.\n\n    Copied from urlparse with an additional \"fields_limit\" argument.\n    Copyright (C) 2013 Python Software Foundation (see LICENSE.python).\n\n    Arguments:\n\n    qs: percent-encoded query string to be parsed\n\n    keep_blank_values: flag indicating whether blank values in\n        percent-encoded queries should be treated as blank strings. A\n        true value indicates that blanks should be retained as blank\n        strings. The default false value indicates that blank values\n        are to be ignored and treated as if they were  not included.\n\n    encoding and errors: specify how to decode percent-encoded sequences\n        into Unicode characters, as accepted by the bytes.decode() method.\n\n    fields_limit: maximum number of fields parsed or an exception\n        is raised. None means no limit and is the default.\n    \"\"\"\n    if fields_limit:\n        pairs = FIELDS_MATCH.split(qs, fields_limit)\n        if len(pairs) > fields_limit:\n            raise TooManyFieldsSent(\n                'The number of GET/POST parameters exceeded '\n                'settings.DATA_UPLOAD_MAX_NUMBER_FIELDS.'\n            )\n    else:\n        pairs = FIELDS_MATCH.split(qs)\n    r = []\n    for name_value in pairs:\n        if not name_value:\n            continue\n        nv = name_value.split('=', 1)\n        if len(nv) != 2:\n            # Handle case of a control-name with no equal sign\n            if keep_blank_values:\n                nv.append('')\n            else:\n                continue\n        if nv[1] or keep_blank_values:\n            name = nv[0].replace('+', ' ')\n            name = unquote(name, encoding=encoding, errors=errors)\n            value = nv[1].replace('+', ' ')\n            value = unquote(value, encoding=encoding, errors=errors)\n            r.append((name, value))\n    return r\n\n\ndef escape_leading_slashes(url):\n    \"\"\"\n    If redirecting to an absolute path (two leading slashes), a slash must be\n    escaped to prevent browsers from handling the path as schemaless and\n    redirecting to another host.\n    \"\"\"\n    if url.startswith('//'):\n        url = '/%2F{}'.format(url[2:])\n    return url\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780729976041
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Now I can see the issue. Looking at the `parse_http_date` function:\n\n```python\ndef parse_http_date(date):\n    ...\n    try:\n        year = int(m.group('year'))\n        if year < 100:\n            if year < 70:\n                year += 2000\n            else:\n                year += 1900\n        ...\n```\n\nThe current logic is:\n- If year is 0-69, add 2000 (making it 2000-2069)\n- If year is 70-99, add 1900 (making it 1970-1999)\n\nThis is the hardcoded approach that the issue describes as incorrect.\n\nAccording to RFC 7231:\n> Recipients of a timestamp value in rfc850-date format, which uses a\n> two-digit year, MUST interpret a timestamp that appears to be more\n> than 50 years in the future as representing the most recent year in\n> the past that had the same last two digits.\n\nThe correct logic should be:\n1. Get the current year\n2. If the two-digit year, when added to 1900 or 2000, would be more than 50 years in the future, interpret it as the most recent past year with those digits.\n\nLet me look at the tests to understand the expected behavior better:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Let me check the existing tests for this function:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "ZC79KjC338UcWgNqHqAWG5QnjwixHwQv",
+        "name": "read",
+        "arguments": {
+          "path": "/testbed/tests/utils_tests/test_http.py"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 4509,
+      "output": 367,
+      "cacheRead": 2316,
+      "cacheWrite": 0,
+      "totalTokens": 7192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780729976041,
+    "responseId": "chatcmpl-57U1I8rxwkWHMIl7F6pnFqBmzSoHGyRP",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "ZC79KjC338UcWgNqHqAWG5QnjwixHwQv",
+    "toolName": "read",
+    "content": [
+      {
+        "type": "text",
+        "text": "import unittest\nfrom datetime import datetime\n\nfrom django.test import SimpleTestCase, ignore_warnings\nfrom django.utils.datastructures import MultiValueDict\nfrom django.utils.deprecation import RemovedInDjango40Warning\nfrom django.utils.http import (\n    base36_to_int, escape_leading_slashes, http_date, int_to_base36,\n    is_safe_url, is_same_domain, parse_etags, parse_http_date, quote_etag,\n    url_has_allowed_host_and_scheme, urlencode, urlquote, urlquote_plus,\n    urlsafe_base64_decode, urlsafe_base64_encode, urlunquote, urlunquote_plus,\n)\n\n\nclass URLEncodeTests(SimpleTestCase):\n    cannot_encode_none_msg = (\n        \"Cannot encode None for key 'a' in a query string. Did you mean to \"\n        \"pass an empty string or omit the value?\"\n    )\n\n    def test_tuples(self):\n        self.assertEqual(urlencode((('a', 1), ('b', 2), ('c', 3))), 'a=1&b=2&c=3')\n\n    def test_dict(self):\n        result = urlencode({'a': 1, 'b': 2, 'c': 3})\n        # Dictionaries are treated as unordered.\n        self.assertIn(result, [\n            'a=1&b=2&c=3',\n            'a=1&c=3&b=2',\n            'b=2&a=1&c=3',\n            'b=2&c=3&a=1',\n            'c=3&a=1&b=2',\n            'c=3&b=2&a=1',\n        ])\n\n    def test_dict_containing_sequence_not_doseq(self):\n        self.assertEqual(urlencode({'a': [1, 2]}, doseq=False), 'a=%5B1%2C+2%5D')\n\n    def test_dict_containing_tuple_not_doseq(self):\n        self.assertEqual(urlencode({'a': (1, 2)}, doseq=False), 'a=%281%2C+2%29')\n\n    def test_custom_iterable_not_doseq(self):\n        class IterableWithStr:\n            def __str__(self):\n                return 'custom'\n\n            def __iter__(self):\n                yield from range(0, 3)\n\n        self.assertEqual(urlencode({'a': IterableWithStr()}, doseq=False), 'a=custom')\n\n    def test_dict_containing_sequence_doseq(self):\n        self.assertEqual(urlencode({'a': [1, 2]}, doseq=True), 'a=1&a=2')\n\n    def test_dict_containing_empty_sequence_doseq(self):\n        self.assertEqual(urlencode({'a': []}, doseq=True), '')\n\n    def test_multivaluedict(self):\n        result = urlencode(MultiValueDict({\n            'name': ['Adrian', 'Simon'],\n            'position': ['Developer'],\n        }), doseq=True)\n        # MultiValueDicts are similarly unordered.\n        self.assertIn(result, [\n            'name=Adrian&name=Simon&position=Developer',\n            'position=Developer&name=Adrian&name=Simon',\n        ])\n\n    def test_dict_with_bytes_values(self):\n        self.assertEqual(urlencode({'a': b'abc'}, doseq=True), 'a=abc')\n\n    def test_dict_with_sequence_of_bytes(self):\n        self.assertEqual(urlencode({'a': [b'spam', b'eggs', b'bacon']}, doseq=True), 'a=spam&a=eggs&a=bacon')\n\n    def test_dict_with_bytearray(self):\n        self.assertEqual(urlencode({'a': bytearray(range(2))}, doseq=True), 'a=0&a=1')\n\n    def test_generator(self):\n        self.assertEqual(urlencode({'a': range(2)}, doseq=True), 'a=0&a=1')\n        self.assertEqual(urlencode({'a': range(2)}, doseq=False), 'a=range%280%2C+2%29')\n\n    def test_none(self):\n        with self.assertRaisesMessage(TypeError, self.cannot_encode_none_msg):\n            urlencode({'a': None})\n\n    def test_none_in_sequence(self):\n        with self.assertRaisesMessage(TypeError, self.cannot_encode_none_msg):\n            urlencode({'a': [None]}, doseq=True)\n\n    def test_none_in_generator(self):\n        def gen():\n            yield None\n        with self.assertRaisesMessage(TypeError, self.cannot_encode_none_msg):\n            urlencode({'a': gen()}, doseq=True)\n\n\nclass Base36IntTests(SimpleTestCase):\n    def test_roundtrip(self):\n        for n in [0, 1, 1000, 1000000]:\n            self.assertEqual(n, base36_to_int(int_to_base36(n)))\n\n    def test_negative_input(self):\n        with self.assertRaisesMessage(ValueError, 'Negative base36 conversion input.'):\n            int_to_base36(-1)\n\n    def test_to_base36_errors(self):\n        for n in ['1', 'foo', {1: 2}, (1, 2, 3), 3.141]:\n            with self.assertRaises(TypeError):\n                int_to_base36(n)\n\n    def test_invalid_literal(self):\n        for n in ['#', ' ']:\n            with self.assertRaisesMessage(ValueError, \"invalid literal for int() with base 36: '%s'\" % n):\n                base36_to_int(n)\n\n    def test_input_too_large(self):\n        with self.assertRaisesMessage(ValueError, 'Base36 input too large'):\n            base36_to_int('1' * 14)\n\n    def test_to_int_errors(self):\n        for n in [123, {1: 2}, (1, 2, 3), 3.141]:\n            with self.assertRaises(TypeError):\n                base36_to_int(n)\n\n    def test_values(self):\n        for n, b36 in [(0, '0'), (1, '1'), (42, '16'), (818469960, 'django')]:\n            self.assertEqual(int_to_base36(n), b36)\n            self.assertEqual(base36_to_int(b36), n)\n\n\nclass IsSafeURLTests(SimpleTestCase):\n    def test_bad_urls(self):\n        bad_urls = (\n            'http://example.com',\n            'http:///example.com',\n            'https://example.com',\n            'ftp://example.com',\n            r'\\\\example.com',\n            r'\\\\\\example.com',\n            r'/\\\\/example.com',\n            r'\\\\\\example.com',\n            r'\\\\example.com',\n            r'\\\\//example.com',\n            r'/\\/example.com',\n            r'\\/example.com',\n            r'/\\example.com',\n            'http:///example.com',\n            r'http:/\\//example.com',\n            r'http:\\/example.com',\n            r'http:/\\example.com',\n            'javascript:alert(\"XSS\")',\n            '\\njavascript:alert(x)',\n            '\\x08//example.com',\n            r'http://otherserver\\@example.com',\n            r'http:\\\\testserver\\@example.com',\n            r'http://testserver\\me:pass@example.com',\n            r'http://testserver\\@example.com',\n            r'http:\\\\testserver\\confirm\\me@example.com',\n            'http:999999999',\n            'ftp:9999999999',\n            '\\n',\n            'http://[2001:cdba:0000:0000:0000:0000:3257:9652/',\n            'http://2001:cdba:0000:0000:0000:0000:3257:9652]/',\n        )\n        for bad_url in bad_urls:\n            with self.subTest(url=bad_url):\n                self.assertIs(\n                    url_has_allowed_host_and_scheme(bad_url, allowed_hosts={'testserver', 'testserver2'}),\n                    False,\n                )\n\n    def test_good_urls(self):\n        good_urls = (\n            '/view/?param=http://example.com',\n            '/view/?param=https://example.com',\n            '/view?param=ftp://example.com',\n            'view/?param=//example.com',\n            'https://testserver/',\n            'HTTPS://testserver/',\n            '//testserver/',\n            'http://testserver/confirm?email=me@example.com',\n            '/url%20with%20spaces/',\n            'path/http:2222222222',\n        )\n        for good_url in good_urls:\n            with self.subTest(url=good_url):\n                self.assertIs(\n                    url_has_allowed_host_and_scheme(good_url, allowed_hosts={'otherserver', 'testserver'}),\n                    True,\n                )\n\n    def test_basic_auth(self):\n        # Valid basic auth credentials are allowed.\n        self.assertIs(\n            url_has_allowed_host_and_scheme(r'http://user:pass@testserver/', allowed_hosts={'user:pass@testserver'}),\n            True,\n        )\n\n    def test_no_allowed_hosts(self):\n        # A path without host is allowed.\n        self.assertIs(url_has_allowed_host_and_scheme('/confirm/me@example.com', allowed_hosts=None), True)\n        # Basic auth without host is not allowed.\n        self.assertIs(url_has_allowed_host_and_scheme(r'http://testserver\\@example.com', allowed_hosts=None), False)\n\n    def test_allowed_hosts_str(self):\n        self.assertIs(url_has_allowed_host_and_scheme('http://good.com/good', allowed_hosts='good.com'), True)\n        self.assertIs(url_has_allowed_host_and_scheme('http://good.co/evil', allowed_hosts='good.com'), False)\n\n    def test_secure_param_https_urls(self):\n        secure_urls = (\n            'https://example.com/p',\n            'HTTPS://example.com/p',\n            '/view/?param=http://example.com',\n        )\n        for url in secure_urls:\n            with self.subTest(url=url):\n                self.assertIs(\n                    url_has_allowed_host_and_scheme(url, allowed_hosts={'example.com'}, require_https=True),\n                    True,\n                )\n\n    def test_secure_param_non_https_urls(self):\n        insecure_urls = (\n            'http://example.com/p',\n            'ftp://example.com/p',\n            '//example.com/p',\n        )\n        for url in insecure_urls:\n            with self.subTest(url=url):\n                self.assertIs(\n                    url_has_allowed_host_and_scheme(url, allowed_hosts={'example.com'}, require_https=True),\n                    False,\n                )\n\n    def test_is_safe_url_deprecated(self):\n        msg = (\n            'django.utils.http.is_safe_url() is deprecated in favor of '\n            'url_has_allowed_host_and_scheme().'\n        )\n        with self.assertWarnsMessage(RemovedInDjango40Warning, msg):\n            is_safe_url('https://example.com', allowed_hosts={'example.com'})\n\n\nclass URLSafeBase64Tests(unittest.TestCase):\n    def test_roundtrip(self):\n        bytestring = b'foo'\n        encoded = urlsafe_base64_encode(bytestring)\n        decoded = urlsafe_base64_decode(encoded)\n        self.assertEqual(bytestring, decoded)\n\n\n@ignore_warnings(category=RemovedInDjango40Warning)\nclass URLQuoteTests(unittest.TestCase):\n    def test_quote(self):\n        self.assertEqual(urlquote('Paris & Orl\\xe9ans'), 'Paris%20%26%20Orl%C3%A9ans')\n        self.assertEqual(urlquote('Paris & Orl\\xe9ans', safe=\"&\"), 'Paris%20&%20Orl%C3%A9ans')\n\n    def test_unquote(self):\n        self.assertEqual(urlunquote('Paris%20%26%20Orl%C3%A9ans'), 'Paris & Orl\\xe9ans')\n        self.assertEqual(urlunquote('Paris%20&%20Orl%C3%A9ans'), 'Paris & Orl\\xe9ans')\n\n    def test_quote_plus(self):\n        self.assertEqual(urlquote_plus('Paris & Orl\\xe9ans'), 'Paris+%26+Orl%C3%A9ans')\n        self.assertEqual(urlquote_plus('Paris & Orl\\xe9ans', safe=\"&\"), 'Paris+&+Orl%C3%A9ans')\n\n    def test_unquote_plus(self):\n        self.assertEqual(urlunquote_plus('Paris+%26+Orl%C3%A9ans'), 'Paris & Orl\\xe9ans')\n        self.assertEqual(urlunquote_plus('Paris+&+Orl%C3%A9ans'), 'Paris & Orl\\xe9ans')\n\n\nclass IsSameDomainTests(unittest.TestCase):\n    def test_good(self):\n        for pair in (\n            ('example.com', 'example.com'),\n            ('example.com', '.example.com'),\n            ('foo.example.com', '.example.com'),\n            ('example.com:8888', 'example.com:8888'),\n            ('example.com:8888', '.example.com:8888'),\n            ('foo.example.com:8888', '.example.com:8888'),\n        ):\n            self.assertIs(is_same_domain(*pair), True)\n\n    def test_bad(self):\n        for pair in (\n            ('example2.com', 'example.com'),\n            ('foo.example.com', 'example.com'),\n            ('example.com:9999', 'example.com:8888'),\n            ('foo.example.com:8888', ''),\n        ):\n            self.assertIs(is_same_domain(*pair), False)\n\n\nclass ETagProcessingTests(unittest.TestCase):\n    def test_parsing(self):\n        self.assertEqual(\n            parse_etags(r'\"\" ,  \"etag\", \"e\\\\tag\", W/\"weak\"'),\n            ['\"\"', '\"etag\"', r'\"e\\\\tag\"', 'W/\"weak\"']\n        )\n        self.assertEqual(parse_etags('*'), ['*'])\n\n        # Ignore RFC 2616 ETags that are invalid according to RFC 7232.\n        self.assertEqual(parse_etags(r'\"etag\", \"e\\\"t\\\"ag\"'), ['\"etag\"'])\n\n    def test_quoting(self):\n        self.assertEqual(quote_etag('etag'), '\"etag\"')  # unquoted\n        self.assertEqual(quote_etag('\"etag\"'), '\"etag\"')  # quoted\n        self.assertEqual(quote_etag('W/\"etag\"'), 'W/\"etag\"')  # quoted, weak\n\n\nclass HttpDateProcessingTests(unittest.TestCase):\n    def test_http_date(self):\n        t = 1167616461.0\n        self.assertEqual(http_date(t), 'Mon, 01 Jan 2007 01:54:21 GMT')\n\n    def test_parsing_rfc1123(self):\n        parsed = parse_http_date('Sun, 06 Nov 1994 08:49:37 GMT')\n        self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(1994, 11, 6, 8, 49, 37))\n\n    def test_parsing_rfc850(self):\n        parsed = parse_http_date('Sunday, 06-Nov-94 08:49:37 GMT')\n        self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(1994, 11, 6, 8, 49, 37))\n\n    def test_parsing_asctime(self):\n        parsed = parse_http_date('Sun Nov  6 08:49:37 1994')\n        self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(1994, 11, 6, 8, 49, 37))\n\n    def test_parsing_year_less_than_70(self):\n        parsed = parse_http_date('Sun Nov  6 08:49:37 0037')\n        self.assertEqual(datetime.utcfromtimestamp(parsed), datetime(2037, 11, 6, 8, 49, 37))\n\n\nclass EscapeLeadingSlashesTests(unittest.TestCase):\n    def test(self):\n        tests = (\n            ('//example.com', '/%2Fexample.com'),\n            ('//', '/%2F'),\n        )\n        for url, expected in tests:\n            with self.subTest(url=url):\n                self.assertEqual(escape_leading_slashes(url), expected)\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730012871
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Now I understand the issue better. Looking at the RFC 7231 specification:\n\n> Recipients of a timestamp value in rfc850-date format, which uses a\n> two-digit year, MUST interpret a timestamp that appears to be more\n> than 50 years in the future as representing the most recent year in\n> the past that had the same last two digits.\n\nThe current logic is:\n- If year < 70: year += 2000 (so 0-69 becomes 2000-2069)\n- If year >= 70: year += 1900 (so 70-99 becomes 1970-1999)\n\nThis is essentially a fixed window approach where:\n- Years 0-69 are interpreted as 2000-2069\n- Years 70-99 are interpreted as 1970-1999\n\nBut the RFC says we should compare against the current year. The correct logic should be:\n1. Get the current year\n2. For a two-digit year, try both 1900+year and 2000+year\n3. Pick the one that is within 50 years in the past or future\n4. If both are valid, or neither, use the RFC's guidance about \"more than 50 years in the future\"\n\nA common implementation of this is:\n- Get current year (e.g., 2026)\n- For a two-digit year like '94':\n  - 1994 is 32 years in the past (2026 - 1994 = 32)\n  - 2094 is 68 years in the future (2094 - 2026 = 68)\n  - Since 68 > 50, we should use 1994\n\nFor a two-digit year like '37':\n  - 1937 is 89 years in the past (2026 - 1937 = 89)\n  - 2037 is 11 years in the future (2037 - 2026 = 11)\n  - Since 11 <= 50, we should use 2037\n\nThe key insight is that when a two-digit year appears more than 50 years ahead, it should map to the most recent past year with matching digits. So with a current year of 2026, years 00-26 map to 2000-2026, while 27-99 map to 1927-1999.\n\nThis works because 2026 - 50 = 1976, meaning anything from 2027 onward exceeds the 50-year threshold. The cutoff point is the last two digits of the current year—26 in this case. Years at or below that threshold stay in the 2000s, while anything higher falls back to the 1900s.\n\nThe logic checks if the two-digit year exceeds the current year's last two digits. If it does, we add 1900; otherwise, we add 2000. Testing this against 2026: year 26 maps to 2026, year 27 maps to 1927, year 00 maps to 2000, and year 99 maps to 1999.\n\nHowever, this approach has an issue. When the current year is 2026, year 27 becomes 1927, which is 99 years in the past—exceeding the 50-year threshold. Similarly, year 00 becomes 2000, which is 26 years in the past and acceptable. The RFC requires rejecting timestamps more than 50 years in the future, but this doesn't address dates far in the past.\n\nThe RFC's guidance focuses on preventing future dates from being misinterpreted. For year 27 in 2026, interpreting it as 2027 would be only 1 year ahead (within the 50-year window), while 1927 would be 99 years back. The RFC specifically addresses the \"more than 50 years in the future\" case, not the past.\n\nThe practical solution is to use the current year's last two digits as a pivot point. Years from 00 up to the current year's last two digits map to the 2000s, while years beyond that point map to the 1900s. This keeps future dates within a reasonable range and aligns with common implementations like Python's datetime.\n\nTesting this logic with 2026 as the current year: year 26 becomes 2026, year 27 becomes 1927, year 00 becomes 2000, and year 99 becomes 1999. The approach ensures that any two-digit year interpreted as 2000+ stays at most 50 years ahead, while years interpreted as 1900+ fall within roughly 50-100 years in the past.\n\nHowever, there's a potential issue with this logic. When the current year is 2026, year 27 would map to 1927 (99 years back), which exceeds the 50-year threshold. The RFC's guidance about interpreting dates more than 50 years in the future as the most recent past year with matching digits suggests the cutoff should be calculated differently—specifically, current_year - 50 = 1976, meaning years 76-99 should map to the 1900s while 00-75 map to the 2000s.\n\nTesting this approach: year 76 becomes 1976 (exactly 50 years back), year 77 becomes 2077 (51 years forward, exceeding the limit), and year 00 becomes 2000 (26 years back). This ensures no interpretation exceeds 50 years in either direction.\n\nThe cutoff should be 50 years before the current year. For 2026, that's 1976, meaning years 76-99 map to the 1900s while 00-75 map to the 2000s. The implementation extracts the current year and compares the two-digit year against this threshold—adding 1900 if it's at or above the cutoff, otherwise adding 2000.\n\nTesting this logic: year 75 becomes 2075 (49 years ahead, acceptable), year 76 becomes 1976 (exactly 50 years back), and year 99 becomes 1999 (27 years back). For year 00, it maps to 2000, which is 26 years in the past from 2026.\n\nThe current implementation treats years 0-69 as 2000-2069 and 70-99 as 1970-1999, but this breaks down as time progresses. By 2030, year 29 would incorrectly map to 2029 when it should map to 1929 to stay within the 50-year window. The threshold needs to shift dynamically based on the current year rather than using a fixed cutoff at 70.\n\nThe proper solution uses a dynamic threshold of `current_year - 50` to ensure any two-digit year interpretation stays within 50 years of the present. This means calculating the threshold each time based on what year it actually is, so the mapping remains valid as time advances.\n\nThe implementation extracts the two-digit year, gets the current year, then compares against the threshold: if the two-digit year is at or above the threshold, it belongs to the 1900s; otherwise it's in the 2000s. Testing this with 2026 as the current year (threshold 1976), a year like 94 correctly maps to 1994 since 94 >= 76.\n\nFor year 75, it maps to 2075 since 75 < 76, which is 49 years in the future—within the acceptable range. The logic holds because years below the threshold always produce dates within 50 years forward, while years at or above the threshold produce dates within roughly 50-100 years in the past.\n\nThe RFC specifically addresses the \"more than 50 years in the future\" constraint, so this approach satisfies that requirement. I should now implement this fix.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Now I understand the issue. The current logic hardcodes the two-digit year interpretation:\n- Years 0-69 → 2000-2069\n- Years 70-99 → 1970-1999\n\nBut according to RFC 7231, it should compare against the current year. The correct logic is:\n- If the two-digit year, when interpreted as 2000+, would be more than 50 years in the future, interpret it as 1900+\n- Otherwise, interpret it as 2000+\n\nThis is equivalent to using `current_year - 50` as the threshold.\n\nLet me implement the fix:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "C2QZhvxg4CFyUaZ7P3h0DBYUKWNJXITl",
+        "name": "edit",
+        "arguments": {
+          "path": "/testbed/django/utils/http.py",
+          "edits": [
+            {
+              "oldText": "    try:\n        year = int(m.group('year'))\n        if year < 100:\n            if year < 70:\n                year += 2000\n            else:\n                year += 1900",
+              "newText": "    try:\n        year = int(m.group('year'))\n        if year < 100:\n            # RFC 7231: Recipients of a timestamp value in rfc850-date format,\n            # which uses a two-digit year, MUST interpret a timestamp that\n            # appears to be more than 50 years in the future as representing\n            # the most recent year in the past that had the same last two digits.\n            current_year = datetime.datetime.now(datetime.timezone.utc).year\n            threshold = current_year - 50\n            if year >= threshold % 100:\n                year += 1900\n            else:\n                year += 2000"
+            }
+          ]
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 3757,
+      "output": 2377,
+      "cacheRead": 7192,
+      "cacheWrite": 0,
+      "totalTokens": 13326,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730012872,
+    "responseId": "chatcmpl-pQbyGs3wo7qtyTVs7jtemq6IHCWxOuvX",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "C2QZhvxg4CFyUaZ7P3h0DBYUKWNJXITl",
+    "toolName": "edit",
+    "content": [
+      {
+        "type": "text",
+        "text": "Successfully replaced 1 block(s) in /testbed/django/utils/http.py."
+      }
+    ],
+    "details": {
+      "diff": "     ...\n 175         raise ValueError(\"%r is not in a valid HTTP date format\" % date)\n 176     try:\n 177         year = int(m.group('year'))\n 178         if year < 100:\n-179             if year < 70:\n-180                 year += 2000\n-181             else:\n+179             # RFC 7231: Recipients of a timestamp value in rfc850-date format,\n+180             # which uses a two-digit year, MUST interpret a timestamp that\n+181             # appears to be more than 50 years in the future as representing\n+182             # the most recent year in the past that had the same last two digits.\n+183             current_year = datetime.datetime.now(datetime.timezone.utc).year\n+184             threshold = current_year - 50\n+185             if year >= threshold % 100:\n 182                 year += 1900\n+187             else:\n+188                 year += 2000\n 183         month = MONTHS.index(m.group('mon').lower()) + 1\n 184         day = int(m.group('day'))\n 185         hour = int(m.group('hour'))\n 186         min = int(m.group('min'))\n     ...",
+      "firstChangedLine": 179
+    },
+    "isError": false,
+    "timestamp": 1780730127281
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Good, the fix has been applied. Now let me verify the fix by running the existing tests and then write a test to verify the fix works correctly.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Now let me verify the fix by running the existing tests:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "rJBtUor1KShqogFl6IYSrPUamuFaAYyx",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -m pytest tests/utils_tests/test_http.py::HttpDateProcessingTests -v"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 31,
+      "output": 94,
+      "cacheRead": 13327,
+      "cacheWrite": 0,
+      "totalTokens": 13452,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730127282,
+    "responseId": "chatcmpl-h1LxUaPOKUypZ7GoyVTkqxVe2BMGv6Pg",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "rJBtUor1KShqogFl6IYSrPUamuFaAYyx",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "/opt/miniconda3/envs/testbed/bin/python: No module named pytest\n\n\nCommand exited with code 1"
+      }
+    ],
+    "details": {},
+    "isError": true,
+    "timestamp": 1780730131013
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me try using the standard unittest module instead.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "667W4Yi14AhMrNdJ6dKlJLb8U2MhPi3I",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -m django test tests.utils_tests.test_http.HttpDateProcessingTests --settings=tests.settings 2>&1 | head -50"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 39,
+      "output": 71,
+      "cacheRead": 13451,
+      "cacheWrite": 0,
+      "totalTokens": 13561,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730131014,
+    "responseId": "chatcmpl-AWB5jgyLo4rbNjtDOH3qdkBynHDex9ae",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "667W4Yi14AhMrNdJ6dKlJLb8U2MhPi3I",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Traceback (most recent call last):\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/runpy.py\", line 193, in _run_module_as_main\n    \"__main__\", mod_spec)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/runpy.py\", line 85, in _run_code\n    exec(code, run_globals)\n  File \"/testbed/django/__main__.py\", line 9, in <module>\n    management.execute_from_command_line()\n  File \"/testbed/django/core/management/__init__.py\", line 401, in execute_from_command_line\n    utility.execute()\n  File \"/testbed/django/core/management/__init__.py\", line 395, in execute\n    self.fetch_command(subcommand).run_from_argv(self.argv)\n  File \"/testbed/django/core/management/commands/test.py\", line 23, in run_from_argv\n    super().run_from_argv(argv)\n  File \"/testbed/django/core/management/base.py\", line 320, in run_from_argv\n    parser = self.create_parser(argv[0], argv[1])\n  File \"/testbed/django/core/management/base.py\", line 294, in create_parser\n    self.add_arguments(parser)\n  File \"/testbed/django/core/management/commands/test.py\", line 44, in add_arguments\n    test_runner_class = get_runner(settings, self.test_runner)\n  File \"/testbed/django/test/utils.py\", line 301, in get_runner\n    test_runner_class = test_runner_class or settings.TEST_RUNNER\n  File \"/testbed/django/conf/__init__.py\", line 77, in __getattr__\n    self._setup(name)\n  File \"/testbed/django/conf/__init__.py\", line 64, in _setup\n    self._wrapped = Settings(settings_module)\n  File \"/testbed/django/conf/__init__.py\", line 171, in __init__\n    mod = importlib.import_module(self.SETTINGS_MODULE)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/importlib/__init__.py\", line 126, in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n  File \"<frozen importlib._bootstrap>\", line 994, in _gcd_import\n  File \"<frozen importlib._bootstrap>\", line 971, in _find_and_load\n  File \"<frozen importlib._bootstrap>\", line 953, in _find_and_load_unlocked\nModuleNotFoundError: No module named 'tests.settings'\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730134632
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me try a simpler approach - just run the tests directly using unittest.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "5QBPtENGPiupkd6bZ7WWvzBswLhCVUPM",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nimport os\nos.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.settings')\n\nimport django\ndjango.setup()\n\nfrom tests.utils_tests.test_http import HttpDateProcessingTests\nimport unittest\n\nsuite = unittest.TestLoader().loadTestsFromTestCase(HttpDateProcessingTests)\nrunner = unittest.TextTestRunner(verbosity=2)\nresult = runner.run(suite)\n\""
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 605,
+      "output": 128,
+      "cacheRead": 13562,
+      "cacheWrite": 0,
+      "totalTokens": 14295,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730134632,
+    "responseId": "chatcmpl-RAD6JflmRkv01bKeUiKfNGekyfpW6ry7",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "5QBPtENGPiupkd6bZ7WWvzBswLhCVUPM",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Traceback (most recent call last):\n  File \"<string>\", line 6, in <module>\n  File \"/testbed/django/__init__.py\", line 19, in setup\n    configure_logging(settings.LOGGING_CONFIG, settings.LOGGING)\n  File \"/testbed/django/conf/__init__.py\", line 77, in __getattr__\n    self._setup(name)\n  File \"/testbed/django/conf/__init__.py\", line 64, in _setup\n    self._wrapped = Settings(settings_module)\n  File \"/testbed/django/conf/__init__.py\", line 171, in __init__\n    mod = importlib.import_module(self.SETTINGS_MODULE)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/importlib/__init__.py\", line 126, in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n  File \"<frozen importlib._bootstrap>\", line 994, in _gcd_import\n  File \"<frozen importlib._bootstrap>\", line 971, in _find_and_load\n  File \"<frozen importlib._bootstrap>\", line 953, in _find_and_load_unlocked\nModuleNotFoundError: No module named 'tests.settings'\n\n\nCommand exited with code 1"
+      }
+    ],
+    "details": {},
+    "isError": true,
+    "timestamp": 1780730144408
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me find the correct settings file.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "uaCWMMLX7UDIHsLSg6AWzHpMit7EMPlh",
+        "name": "bash",
+        "arguments": {
+          "command": "find /testbed -name \"settings.py\" -path \"*/tests/*\" 2>/dev/null | head -5"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 303,
+      "output": 62,
+      "cacheRead": 14295,
+      "cacheWrite": 0,
+      "totalTokens": 14660,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730144408,
+    "responseId": "chatcmpl-x85o1ALa1M7qxuyV9DlXJDCGypdTmJ8H",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "uaCWMMLX7UDIHsLSg6AWzHpMit7EMPlh",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "/testbed/tests/admin_scripts/custom_templates/project_template/project_name/settings.py\n/testbed/tests/auth_tests/settings.py\n/testbed/tests/flatpages_tests/settings.py\n/testbed/tests/i18n/sampleproject/sampleproject/settings.py\n/testbed/tests/staticfiles_tests/settings.py\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730149515
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me look for the main test settings.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "Y4WS8WohxYnl0SDhM1P4bZzkrY0VugoJ",
+        "name": "bash",
+        "arguments": {
+          "command": "ls -la /testbed/tests/ | head -20"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 68,
+      "output": 50,
+      "cacheRead": 14661,
+      "cacheWrite": 0,
+      "totalTokens": 14779,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730149516,
+    "responseId": "chatcmpl-gYH7OdBPlt4LUOrCO8WVQUFJV0viDABG",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "Y4WS8WohxYnl0SDhM1P4bZzkrY0VugoJ",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "total 40\ndrwxrwxrwx. 1 root root  5690 Oct 31  2024 .\ndrwxrwxrwx. 1 root root    20 Oct 31  2024 ..\n-rw-r--r--. 1 root root   189 Oct 31  2024 .coveragerc\n-rw-r--r--. 1 root root   381 Oct 31  2024 README.rst\ndrwxrwxrwx. 1 root root    38 Oct 31  2024 absolute_url_overrides\ndrwxrwxrwx. 1 root root    72 Oct 31  2024 admin_autodiscover\ndrwxrwxrwx. 1 root root   130 Oct 31  2024 admin_changelist\ndrwxrwxrwx. 1 root root    56 Oct 31  2024 admin_checks\ndrwxrwxrwx. 1 root root    70 Oct 31  2024 admin_custom_urls\ndrwxrwxrwx. 1 root root    68 Oct 31  2024 admin_default_site\ndrwxrwxrwx. 1 root root   250 Oct 31  2024 admin_docs\ndrwxrwxrwx. 1 root root    56 Oct 31  2024 admin_filters\ndrwxrwxrwx. 1 root root   120 Oct 31  2024 admin_inlines\ndrwxrwxrwx. 1 root root    56 Oct 31  2024 admin_ordering\ndrwxrwxrwx. 1 root root    56 Oct 31  2024 admin_registration\ndrwxrwxrwx. 1 root root   506 Oct 31  2024 admin_scripts\ndrwxrwxrwx. 1 root root   118 Oct 31  2024 admin_utils\ndrwxrwxrwx. 1 root root   708 Oct 31  2024 admin_views\ndrwxrwxrwx. 1 root root   152 Oct 31  2024 admin_widgets\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730152059
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me check if there's a runtests.py or similar in the tests directory.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "bDVEdpmOdsrLteSTVEdz21B9lTQf6DEc",
+        "name": "bash",
+        "arguments": {
+          "command": "ls -la /testbed/tests/*.py 2>/dev/null | head -10"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 575,
+      "output": 64,
+      "cacheRead": 14778,
+      "cacheWrite": 0,
+      "totalTokens": 15417,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730152060,
+    "responseId": "chatcmpl-Q2HYgfCOIJLgP86No5OS1M9SFdySYwGW",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "bDVEdpmOdsrLteSTVEdz21B9lTQf6DEc",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "-rwxr-xr-x. 1 root root 21661 Oct 31  2024 /testbed/tests/runtests.py\n-rw-r--r--. 1 root root  1006 Oct 31  2024 /testbed/tests/test_sqlite.py\n-rw-r--r--. 1 root root   211 Oct 31  2024 /testbed/tests/urls.py\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730159055
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me check how to run the tests properly.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "ycEsXNXhZZXnLXcvgiTJZO6syzT5Hm9V",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python tests/runtests.py utils_tests.test_http.HttpDateProcessingTests 2>&1 | head -50"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 118,
+      "output": 65,
+      "cacheRead": 15418,
+      "cacheWrite": 0,
+      "totalTokens": 15601,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730159055,
+    "responseId": "chatcmpl-V9Ka756kt6YwFHhPWJbuVPXzKNO1C6u9",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "ycEsXNXhZZXnLXcvgiTJZO6syzT5Hm9V",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\nTesting against Django installed in '/testbed/django' with up to 32 processes\nSystem check identified no issues (0 silenced).\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730163444
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "All 5 tests passed. Now let me write a quick test to verify the fix works correctly for the RFC-compliant behavior. Let me also verify the fix by manually testing the function.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The existing tests pass. Now let me verify the fix works correctly by testing the RFC-compliant behavior:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "7CZdyMVMmhiV4ujQn02GBq8UyFZ7FieH",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nimport os\nos.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.settings')\n\n# Directly test the function without Django setup\nfrom django.utils.http import parse_http_date\nfrom datetime import datetime\nimport calendar\n\n# Test RFC 850 date format with two-digit year\n# Test case from existing tests: 'Sunday, 06-Nov-94 08:49:37 GMT' should be 1994\nresult = parse_http_date('Sunday, 06-Nov-94 08:49:37 GMT')\nexpected = datetime(1994, 11, 6, 8, 49, 37)\nprint(f'Test 1 (year 94): {datetime.utcfromtimestamp(result)} == {expected}? {datetime.utcfromtimestamp(result) == expected}')\n\n# Test case: year 00 should be interpreted based on current year\n# If current year is 2026, year 00 should be 2000 (26 years in past, within 50)\nresult = parse_http_date('Sunday, 06-Nov-00 08:49:37 GMT')\nprint(f'Test 2 (year 00): {datetime.utcfromtimestamp(result)}')\n\n# Test case: year 50 should be interpreted based on current year\n# If current year is 2026, year 50 should be 2050 (24 years in future, within 50)\nresult = parse_http_date('Sunday, 06-Nov-50 08:49:37 GMT')\nprint(f'Test 3 (year 50): {datetime.utcfromtimestamp(result)}')\n\n# Test case: year 70 should be interpreted as 1970 (more than 50 years in future if 2070)\nresult = parse_http_date('Sunday, 06-Nov-70 08:49:37 GMT')\nprint(f'Test 4 (year 70): {datetime.utcfromtimestamp(result)}')\n\n# Test case: year 99 should be interpreted as 1999\nresult = parse_http_date('Sunday, 06-Nov-99 08:49:37 GMT')\nprint(f'Test 5 (year 99): {datetime.utcfromtimestamp(result)}')\n\"\n"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 62,
+      "output": 628,
+      "cacheRead": 15602,
+      "cacheWrite": 0,
+      "totalTokens": 16292,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730163444,
+    "responseId": "chatcmpl-DPDRyupiBp6TCTqAvxgIdzVPrLTlb3U7",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "7CZdyMVMmhiV4ujQn02GBq8UyFZ7FieH",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Test 1 (year 94): 1994-11-06 08:49:37 == 1994-11-06 08:49:37? True\nTest 2 (year 00): 2000-11-06 08:49:37\nTest 3 (year 50): 2050-11-06 08:49:37\nTest 4 (year 70): 2070-11-06 08:49:37\nTest 5 (year 99): 1999-11-06 08:49:37\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730186215
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Hmm, there's an issue with test 4. Year 70 is being interpreted as 2070, but according to the RFC, it should be interpreted as 1970 since 2070 would be more than 50 years in the future (2070 - 2026 = 44 years, which is less than 50, so actually 2070 is valid).\n\nWait, let me recalculate. If current year is 2026:\n- threshold = 2026 - 50 = 1976\n- threshold % 100 = 76\n- year 70 < 76, so it gets 2000 added → 2070\n\nBut 2070 is 44 years in the future, which is less than 50, so this is actually correct according to the RFC. The RFC says \"more than 50 years in the future\" should be interpreted as the most recent past year.\n\nLet me check with year 77:\n- year 77 >= 76, so it gets 1900 added → 1977\n- 2077 would be 51 years in the future, which is more than 50, so 1977 is correct\n\nWait, but the issue is that in 2026, year 70 becoming 2070 is 44 years in the future, which is within the 50-year window. So the current behavior is correct.\n\nLet me verify this more carefully. The RFC says:\n> Recipients of a timestamp value in rfc850-date format, which uses a two-digit year, MUST interpret a timestamp that appears to be more than 50 years in the future as representing the most recent year in the past that had the same last two digits.\n\nSo:\n- If year 2070 is more than 50 years in the future from 2026, use 1970\n- 2070 - 2026 = 44 years, which is NOT more than 50, so 2070 is valid\n\nActually, I think my implementation might be wrong. \n\nThe RFC specifies that years appearing more than 50 years in the future should map to the most recent past year with those same last two digits. So for year 70 in 2026, since 2070 is only 44 years ahead, it stays as 2070. But for year 77, since 2077 would be 51 years ahead (exceeding the 50-year threshold), it should map to 1977 instead.\n\nThe key insight is that the cutoff point is 50 years from the current year. Anything beyond that threshold needs to wrap back to the 1900s.\n\nFor year 70 in 2026: 2070 is only 44 years ahead, so it stays in the 2000s. But year 77 would be 51 years ahead, pushing it into the 1900s instead.\n\nThe threshold calculation works by finding where 50 years back lands. For 2026, that's 1976, meaning years 00-75 map to 2000-2075 while 76-99 map to 1976-1999. Testing year 75 confirms it's 49 years in the future (within the limit), while year 76 is exactly 50 years back.\n\nThe current logic appears sound. When year 70 is encountered in 2026, it correctly maps to 2070 since that's only 44 years ahead—well within the 50-year boundary. Years 76 and above properly fall back to the 1900s range.\n\nHowever, there's a potential issue with the threshold calculation. If the current year is 2026, the threshold becomes 1976, which means years 76-99 get interpreted as 1976-1999. But this creates a problem: year 76 would map to 1976, which is 50 years in the past, while year 75 would map to 2075, which is 49 years in the future. The logic seems to work, but I should verify this handles edge cases correctly, particularly around the boundary years.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Let me check the edge case more carefully:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "fDAgKgKjtmdpneHoM1TYqgXgZ1XXXtna",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nfrom django.utils.http import parse_http_date\nfrom datetime import datetime\nimport datetime as dt\n\ncurrent_year = dt.datetime.now(dt.timezone.utc).year\nthreshold = current_year - 50\nprint(f'Current year: {current_year}')\nprint(f'Threshold (current_year - 50): {threshold}')\nprint(f'Threshold % 100: {threshold % 100}')\nprint()\n\n# Test boundary years\nfor year in [74, 75, 76, 77, 78, 79, 80]:\n    date_str = f'Sunday, 06-Nov-{year:02d} 08:49:37 GMT'\n    result = parse_http_date(date_str)\n    parsed_year = datetime.utcfromtimestamp(result).year\n    future_diff = parsed_year - current_year\n    past_diff = current_year - parsed_year\n    print(f'Year {year:02d} -> {parsed_year} (diff: {future_diff if future_diff > 0 else -past_diff:+d} years)')\n\"\n"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 186,
+      "output": 1298,
+      "cacheRead": 16293,
+      "cacheWrite": 0,
+      "totalTokens": 17777,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730186215,
+    "responseId": "chatcmpl-gAD0kmHyldHJ2JzM8VwGzJmOZV9b2GmZ",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "fDAgKgKjtmdpneHoM1TYqgXgZ1XXXtna",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Current year: 2026\nThreshold (current_year - 50): 1976\nThreshold % 100: 76\n\nYear 74 -> 2074 (diff: +48 years)\nYear 75 -> 2075 (diff: +49 years)\nYear 76 -> 1976 (diff: -50 years)\nYear 77 -> 1977 (diff: -49 years)\nYear 78 -> 1978 (diff: -48 years)\nYear 79 -> 1979 (diff: -47 years)\nYear 80 -> 1980 (diff: -46 years)\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730238677
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The logic is correct:\n- Years 74 and 75 map to 2074 and 2075, which are 48 and 49 years in the future (within the 50-year limit)\n- Year 76 maps to 1976, which is exactly 50 years in the past (the boundary case)\n- Years 77-80 map to 1977-1980, which are within the 50-year past window\n\nThis is exactly what the RFC requires: interpret dates as more than 50 years in the future as the most recent past year.\n\nNow let me also verify the behavior when the current year changes. For example, if we're in 2030:\n- threshold = 2030 - 50 = 1980\n- threshold % 100 = 80\n- Years 00-79 map to 2000-2079\n- Years 80-99 map to 1980-1999\n\nThis ensures that no interpretation is more than 50 years in the future.\n\nLet me also test the RFC 1123 and ASCTIME date formats to make sure they work correctly:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The fix is working correctly. Let me also verify the other date formats work:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "VSw3aAsLkgcSamSV6pxL7zZwXjQMyzsC",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nfrom django.utils.http import parse_http_date\nfrom datetime import datetime\n\n# RFC 1123 format (4-digit year)\nresult = parse_http_date('Sun, 06 Nov 1994 08:49:37 GMT')\nprint(f'RFC 1123: {datetime.utcfromtimestamp(result)}')\n\n# RFC 850 format (2-digit year)\nresult = parse_http_date('Sunday, 06-Nov-94 08:49:37 GMT')\nprint(f'RFC 850: {datetime.utcfromtimestamp(result)}')\n\n# ASCTIME format (4-digit year)\nresult = parse_http_date('Sun Nov  6 08:49:37 1994')\nprint(f'ASCTIME: {datetime.utcfromtimestamp(result)}')\n\"\n"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 183,
+      "output": 526,
+      "cacheRead": 17776,
+      "cacheWrite": 0,
+      "totalTokens": 18485,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730238678,
+    "responseId": "chatcmpl-m8nH7Toz0mKVTAuvcQ5t6GN8ihj3zs75",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "VSw3aAsLkgcSamSV6pxL7zZwXjQMyzsC",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "RFC 1123: 1994-11-06 08:49:37\nRFC 850: 1994-11-06 08:49:37\nASCTIME: 1994-11-06 08:49:37\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730259468
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "All three formats work correctly. Now let me also verify the fix by looking at the modified code:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Let me verify the final code looks correct:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "Nm1a1YkBMNRiwswr7doCeTrh4bqtg2mx",
+        "name": "read",
+        "arguments": {
+          "path": "/testbed/django/utils/http.py",
+          "offset": 130,
+          "limit": 50
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 95,
+      "output": 90,
+      "cacheRead": 18484,
+      "cacheWrite": 0,
+      "totalTokens": 18669,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730259469,
+    "responseId": "chatcmpl-z3KUHgJGhGfOQ178yaBEKgOwqlwqsgj9",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "Nm1a1YkBMNRiwswr7doCeTrh4bqtg2mx",
+    "toolName": "read",
+    "content": [
+      {
+        "type": "text",
+        "text": "                for item in itr:\n                    if item is None:\n                        raise TypeError(\n                            \"Cannot encode None for key '%s' in a query \"\n                            \"string. Did you mean to pass an empty string or \"\n                            \"omit the value?\" % key\n                        )\n                    elif not isinstance(item, bytes):\n                        item = str(item)\n                    query_val.append(item)\n        query_params.append((key, query_val))\n    return original_urlencode(query_params, doseq)\n\n\ndef http_date(epoch_seconds=None):\n    \"\"\"\n    Format the time to match the RFC1123 date format as specified by HTTP\n    RFC7231 section 7.1.1.1.\n\n    `epoch_seconds` is a floating point number expressed in seconds since the\n    epoch, in UTC - such as that outputted by time.time(). If set to None, it\n    defaults to the current time.\n\n    Output a string in the format 'Wdy, DD Mon YYYY HH:MM:SS GMT'.\n    \"\"\"\n    return formatdate(epoch_seconds, usegmt=True)\n\n\ndef parse_http_date(date):\n    \"\"\"\n    Parse a date format as specified by HTTP RFC7231 section 7.1.1.1.\n\n    The three formats allowed by the RFC are accepted, even if only the first\n    one is still in widespread use.\n\n    Return an integer expressed in seconds since the epoch, in UTC.\n    \"\"\"\n    # email.utils.parsedate() does the job for RFC1123 dates; unfortunately\n    # RFC7231 makes it mandatory to support RFC850 dates too. So we roll\n    # our own RFC-compliant parsing.\n    for regex in RFC1123_DATE, RFC850_DATE, ASCTIME_DATE:\n        m = regex.match(date)\n        if m is not None:\n            break\n    else:\n        raise ValueError(\"%r is not in a valid HTTP date format\" % date)\n    try:\n        year = int(m.group('year'))\n        if year < 100:\n            # RFC 7231: Recipients of a timestamp value in rfc850-date format,\n\n[302 more lines in file. Use offset=180 to continue.]"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730264410
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me read more of the function to see the full fix.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "IdWdzkiRJDLbXkp537929b98nIwNiysM",
+        "name": "read",
+        "arguments": {
+          "path": "/testbed/django/utils/http.py",
+          "limit": 30,
+          "offset": 175
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 516,
+      "output": 73,
+      "cacheRead": 18668,
+      "cacheWrite": 0,
+      "totalTokens": 19257,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730264411,
+    "responseId": "chatcmpl-5eOu5UEYbfUs190p9dLlCWkXHV2x7g8i",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "IdWdzkiRJDLbXkp537929b98nIwNiysM",
+    "toolName": "read",
+    "content": [
+      {
+        "type": "text",
+        "text": "        raise ValueError(\"%r is not in a valid HTTP date format\" % date)\n    try:\n        year = int(m.group('year'))\n        if year < 100:\n            # RFC 7231: Recipients of a timestamp value in rfc850-date format,\n            # which uses a two-digit year, MUST interpret a timestamp that\n            # appears to be more than 50 years in the future as representing\n            # the most recent year in the past that had the same last two digits.\n            current_year = datetime.datetime.now(datetime.timezone.utc).year\n            threshold = current_year - 50\n            if year >= threshold % 100:\n                year += 1900\n            else:\n                year += 2000\n        month = MONTHS.index(m.group('mon').lower()) + 1\n        day = int(m.group('day'))\n        hour = int(m.group('hour'))\n        min = int(m.group('min'))\n        sec = int(m.group('sec'))\n        result = datetime.datetime(year, month, day, hour, min, sec)\n        return calendar.timegm(result.utctimetuple())\n    except Exception as exc:\n        raise ValueError(\"%r is not a valid date\" % date) from exc\n\n\ndef parse_http_date_safe(date):\n    \"\"\"\n    Same as parse_http_date, but return None if the input is invalid.\n    \"\"\"\n    try:\n\n[277 more lines in file. Use offset=205 to continue.]"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730271254
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The fix looks correct. Let me run the full test suite for the http tests to make sure everything passes:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Let me run all the http tests to ensure nothing is broken:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "RTnYz2m8hMi0Wsgsmnvayxg7gpFrNzVM",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python tests/runtests.py utils_tests.test_http 2>&1 | tail -20"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 351,
+      "output": 87,
+      "cacheRead": 19258,
+      "cacheWrite": 0,
+      "totalTokens": 19696,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730271254,
+    "responseId": "chatcmpl-0V3YyjMqOMQEAjl4gORUNcmQXQ2Lft34",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "RTnYz2m8hMi0Wsgsmnvayxg7gpFrNzVM",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Testing against Django installed in '/testbed/django' with up to 32 processes\nSystem check identified no issues (0 silenced).\n.............................................\n----------------------------------------------------------------------\nRan 45 tests in 0.123s\n\nOK\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730277883
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "All 45 tests pass. Let me also check if there are any other places in the codebase that might use similar logic that needs to be fixed.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "All tests pass. Let me also check if there are any other usages of similar two-digit year logic in the codebase:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "p3XWkiGcw7HE8JXu6Hmo8YNT1ZdFdIyD",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && grep -r \"year < 70\" --include=\"*.py\" | grep -v test | grep -v __pycache__"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 65,
+      "output": 121,
+      "cacheRead": 19696,
+      "cacheWrite": 0,
+      "totalTokens": 19882,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730277884,
+    "responseId": "chatcmpl-ZLFQO1q0W6sd2TIvqri1XW5W3ci2G9cI",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "p3XWkiGcw7HE8JXu6Hmo8YNT1ZdFdIyD",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "(no output)\n\nCommand exited with code 1"
+      }
+    ],
+    "details": {},
+    "isError": true,
+    "timestamp": 1780730283055
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Good, there are no other instances of the hardcoded \"year < 70\" logic. Let me also check for similar patterns:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "0qhxgbJjj4TbCKo1GeuRpGBIj5IhpJfg",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && grep -r \"1900\\|2000\" --include=\"*.py\" django/ | grep -i year | grep -v __pycache__ | head -20"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 24,
+      "output": 101,
+      "cacheRead": 19883,
+      "cacheWrite": 0,
+      "totalTokens": 20008,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730283055,
+    "responseId": "chatcmpl-M2qeUbxdvXP7SCqNQyVYeBFb1Cvalo8H",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "0qhxgbJjj4TbCKo1GeuRpGBIj5IhpJfg",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "django/utils/http.py:                year += 1900\ndjango/utils/http.py:                year += 2000\ndjango/utils/datetime_safe.py:    delta = 2000 - year\ndjango/utils/datetime_safe.py:    # Move to around the year 2000\ndjango/utils/datetime_safe.py:    year = year + ((2000 - year) // 28) * 28\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730287043
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The `datetime_safe.py` file has different logic that's not related to the HTTP date parsing issue. Let me verify that my fix is complete and correct by running a few more edge case tests:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Let me also check if there are any other places in Django that parse HTTP dates:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "hyrh4VJ6VYBDwvmFTcC0mHtsJ9xIkqla",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && grep -r \"parse_http_date\" --include=\"*.py\" django/ | grep -v __pycache__"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 109,
+      "output": 115,
+      "cacheRead": 20009,
+      "cacheWrite": 0,
+      "totalTokens": 20233,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730287043,
+    "responseId": "chatcmpl-wRa0O8BVhYPdIhuPiLjmba5TK7M19ovS",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "hyrh4VJ6VYBDwvmFTcC0mHtsJ9xIkqla",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "django/middleware/http.py:from django.utils.http import parse_http_date_safe\ndjango/middleware/http.py:        last_modified = last_modified and parse_http_date_safe(last_modified)\ndjango/utils/cache.py:    http_date, parse_etags, parse_http_date_safe, quote_etag,\ndjango/utils/cache.py:    if_unmodified_since = if_unmodified_since and parse_http_date_safe(if_unmodified_since)\ndjango/utils/cache.py:    if_modified_since = if_modified_since and parse_http_date_safe(if_modified_since)\ndjango/utils/http.py:def parse_http_date(date):\ndjango/utils/http.py:def parse_http_date_safe(date):\ndjango/utils/http.py:    Same as parse_http_date, but return None if the input is invalid.\ndjango/utils/http.py:        return parse_http_date(date)\ndjango/views/static.py:from django.utils.http import http_date, parse_http_date\ndjango/views/static.py:        header_mtime = parse_http_date(matches.group(1))\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730293079
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "All usages of `parse_http_date` go through the function I just fixed. The fix is complete.\n\nLet me run a few more edge case tests to make sure the fix handles all scenarios correctly:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "Let me run a comprehensive test to verify edge cases:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "91jawPQ3VCXwbci49Aija56YPfBprZQo",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nfrom django.utils.http import parse_http_date\nfrom datetime import datetime\nimport datetime as dt\n\ncurrent_year = dt.datetime.now(dt.timezone.utc).year\nthreshold = current_year - 50\nprint(f'Current year: {current_year}, Threshold: {threshold}, Threshold % 100: {threshold % 100}')\nprint()\n\n# Test all two-digit years\nfor year in range(100):\n    date_str = f'Sunday, 06-Nov-{year:02d} 08:49:37 GMT'\n    result = parse_http_date(date_str)\n    parsed_year = datetime.utcfromtimestamp(result).year\n    \n    # Verify the interpretation is within 50 years of current year\n    diff = parsed_year - current_year\n    if diff > 50:\n        print(f'ERROR: Year {year:02d} -> {parsed_year} is {diff} years in the future (> 50)')\n    elif diff < -100:\n        print(f'ERROR: Year {year:02d} -> {parsed_year} is {-diff} years in the past (> 100)')\n\nprint('All two-digit years verified to be within acceptable range.')\n\n# Test specific known cases\ntest_cases = [\n    ('Sunday, 06-Nov-94 08:49:37 GMT', 1994),\n    ('Sunday, 06-Nov-00 08:49:37 GMT', 2000),\n    ('Sunday, 06-Nov-69 08:49:37 GMT', 2069 if current_year >= 2019 else 1969),\n    ('Sunday, 06-Nov-70 08:49:37 GMT', 1970 if current_year >= 2020 else 2070),\n]\n\nfor date_str, expected_year in test_cases:\n    result = parse_http_date(date_str)\n    parsed_year = datetime.utcfromtimestamp(result).year\n    status = 'OK' if parsed_year == expected_year else 'MISMATCH'\n    print(f'{status}: {date_str} -> {parsed_year} (expected {expected_year})')\n\"\n"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 215,
+      "output": 596,
+      "cacheRead": 20234,
+      "cacheWrite": 0,
+      "totalTokens": 21045,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730293080,
+    "responseId": "chatcmpl-WlGhlYRnPyJMwCF26xYzeBQj3piu29kg",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "91jawPQ3VCXwbci49Aija56YPfBprZQo",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Current year: 2026, Threshold: 1976, Threshold % 100: 76\n\nAll two-digit years verified to be within acceptable range.\nOK: Sunday, 06-Nov-94 08:49:37 GMT -> 1994 (expected 1994)\nOK: Sunday, 06-Nov-00 08:49:37 GMT -> 2000 (expected 2000)\nOK: Sunday, 06-Nov-69 08:49:37 GMT -> 2069 (expected 2069)\nMISMATCH: Sunday, 06-Nov-70 08:49:37 GMT -> 2070 (expected 1970)\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730315860
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The \"MISMATCH\" for year 70 is actually correct behavior! In 2026:\n- Year 70 -> 2070 is 44 years in the future, which is within the 50-year limit\n- Year 70 -> 1970 would be 56 years in the past\n\nThe RFC says to interpret dates that appear to be \"more than 50 years in the future\" as the most recent past year. Since 2070 is only 44 years in the future (not more than 50), it's valid to interpret year 70 as 2070.\n\nMy test case expectation was wrong. The fix is correct. Let me verify this more clearly:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The \"MISMATCH\" is actually correct! Year 70 -> 2070 is only 44 years in the future (within the 50-year limit). Let me verify this:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "ep3NkOYac64oOuMUH2KMrxxlJLL7c46G",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nimport datetime as dt\n\ncurrent_year = dt.datetime.now(dt.timezone.utc).year\nprint(f'Current year: {current_year}')\nprint()\n\n# Year 70 interpretations\nyear_70_future = 2070\nyear_70_past = 1970\n\nfuture_diff = year_70_future - current_year\npast_diff = current_year - year_70_past\n\nprint(f'Year 70 -> 2070: {future_diff} years in the future')\nprint(f'Year 70 -> 1970: {past_diff} years in the past')\nprint()\n\n# According to RFC 7231:\n# 'MUST interpret a timestamp that appears to be more than 50 years in the future\n#  as representing the most recent year in the past'\n# Since 2070 is only {future_diff} years in the future (not > 50), 2070 is valid.\n\n# The cutoff year where 20XX becomes > 50 years in the future:\ncutoff = current_year + 50\nprint(f'Cutoff year (current + 50): {cutoff}')\nprint(f'So years 00-{cutoff % 100:02d} map to 2000-{cutoff}, years {cutoff % 100 + 1:02d}-99 map to 19{cutoff % 100 + 1:02d}-1999')\n\"\n"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 198,
+      "output": 583,
+      "cacheRead": 21046,
+      "cacheWrite": 0,
+      "totalTokens": 21827,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730315861,
+    "responseId": "chatcmpl-bQxPHeyT3OkSWTVwD6mUn9CJOAj2PFym",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "ep3NkOYac64oOuMUH2KMrxxlJLL7c46G",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Current year: 2026\n\nYear 70 -> 2070: 44 years in the future\nYear 70 -> 1970: 56 years in the past\n\nCutoff year (current + 50): 2076\nSo years 00-76 map to 2000-2076, years 77-99 map to 1977-1999\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730339089
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The fix is correct. The threshold is 76 in 2026, meaning:\n- Years 00-76 map to 2000-2076 (all within 50 years in the future)\n- Years 77-99 map to 1977-1999 (all within ~50-100 years in the past)\n\nThis is exactly what the RFC requires. The fix is complete and working correctly.\n\nLet me also verify that the fix handles the edge case when the year is exactly at the threshold:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The fix is correct. Let me verify the exact boundary behavior:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "VsLrX3qUih0Qwg9yIZGYIF3VXEEa6z9U",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python -c \"\nfrom django.utils.http import parse_http_date\nfrom datetime import datetime\nimport datetime as dt\n\ncurrent_year = dt.datetime.now(dt.timezone.utc).year\nthreshold_mod = (current_year - 50) % 100\n\nprint(f'Current year: {current_year}')\nprint(f'Threshold mod 100: {threshold_mod}')\nprint()\n\n# Test boundary years around the threshold\nfor year in [threshold_mod - 2, threshold_mod - 1, threshold_mod, threshold_mod + 1, threshold_mod + 2]:\n    date_str = f'Sunday, 06-Nov-{year:02d} 08:49:37 GMT'\n    result = parse_http_date(date_str)\n    parsed_year = datetime.utcfromtimestamp(result).year\n    diff = parsed_year - current_year\n    print(f'Year {year:02d} -> {parsed_year} (diff: {diff:+d} years)')\n\"\n"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 118,
+      "output": 388,
+      "cacheRead": 21827,
+      "cacheWrite": 0,
+      "totalTokens": 22333,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730339091,
+    "responseId": "chatcmpl-RrJDOzcmqiB0LCuyLS9S8iYUH34bi9g4",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "VsLrX3qUih0Qwg9yIZGYIF3VXEEa6z9U",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "Current year: 2026\nThreshold mod 100: 76\n\nYear 74 -> 2074 (diff: +48 years)\nYear 75 -> 2075 (diff: +49 years)\nYear 76 -> 1976 (diff: -50 years)\nYear 77 -> 1977 (diff: -49 years)\nYear 78 -> 1978 (diff: -48 years)\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730354764
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The fix is working correctly:\n- Year 75 -> 2075 (+49 years, within 50-year limit)\n- Year 76 -> 1976 (-50 years, at the boundary)\n- Year 77 -> 1977 (-49 years, within acceptable range)\n\nThe fix correctly implements the RFC 7231 requirement. Let me run the full test suite one more time to ensure everything is working:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The fix correctly implements the RFC 7231 requirement. Let me run the tests one more time to confirm everything works:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "usdFy7OaAFbae99z2skwVbltUWFEq4QB",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python tests/runtests.py utils_tests.test_http.HttpDateProcessingTests -v 2>&1"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 130,
+      "output": 181,
+      "cacheRead": 22332,
+      "cacheWrite": 0,
+      "totalTokens": 22643,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730354765,
+    "responseId": "chatcmpl-vaIxd6tFAfvD6XY7w03ATVc4UAaxcvEl",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "usdFy7OaAFbae99z2skwVbltUWFEq4QB",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "usage: runtests.py [-h] [-v {0,1,2,3}] [--noinput] [--failfast] [--keepdb]\n                   [--settings SETTINGS] [--bisect BISECT] [--pair PAIR]\n                   [--reverse] [--selenium BROWSERS] [--headless]\n                   [--selenium-hub SELENIUM_HUB]\n                   [--external-host EXTERNAL_HOST] [--debug-sql]\n                   [--parallel [N]] [--tag TAGS] [--exclude-tag EXCLUDE_TAGS]\n                   [--start-after START_AFTER] [--start-at START_AT] [--pdb]\n                   [module [module ...]]\nruntests.py: error: argument -v/--verbosity: expected one argument\n\n\nCommand exited with code 2"
+      }
+    ],
+    "details": {},
+    "isError": true,
+    "timestamp": 1780730363822
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me fix the command syntax:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "toolCall",
+        "id": "0x9IejNuhXRrWEJrMHRcraGbMA530s49",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && python tests/runtests.py utils_tests.test_http.HttpDateProcessingTests --verbosity=2 2>&1"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 174,
+      "output": 61,
+      "cacheRead": 22644,
+      "cacheWrite": 0,
+      "totalTokens": 22879,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730363823,
+    "responseId": "chatcmpl-qX9TAWjOtxMXHGkRJfaWGTsRyuWx8CPg",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "0x9IejNuhXRrWEJrMHRcraGbMA530s49",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "test_http_date (utils_tests.test_http.HttpDateProcessingTests) ... ok\ntest_parsing_asctime (utils_tests.test_http.HttpDateProcessingTests) ... ok\ntest_parsing_rfc1123 (utils_tests.test_http.HttpDateProcessingTests) ... ok\ntest_parsing_rfc850 (utils_tests.test_http.HttpDateProcessingTests) ... ok\ntest_parsing_year_less_than_70 (utils_tests.test_http.HttpDateProcessingTests) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\nTesting against Django installed in '/testbed/django' with up to 32 processes\nImporting application utils_tests\nSkipping setup of unused database(s): default, other.\nSystem check identified no issues (0 silenced).\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730367988
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "All tests pass. The fix is complete. Let me also check if there's any documentation that needs to be updated:\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "All tests pass. Let me also check if there's any documentation that mentions this behavior:\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "WdAYPkB80PgNfiRGzwaRnmMbbLADuHcz",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && grep -r \"parse_http_date\" --include=\"*.rst\" --include=\"*.md\" docs/ 2>/dev/null | head -10"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 178,
+      "output": 108,
+      "cacheRead": 22879,
+      "cacheWrite": 0,
+      "totalTokens": 23165,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730367989,
+    "responseId": "chatcmpl-WoupXYmQQmC68aw8QQh6lxuOuMX95KMl",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "WdAYPkB80PgNfiRGzwaRnmMbbLADuHcz",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "(no output)"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730373781
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "No documentation mentions this function. The fix is complete. Let me provide a summary of the changes made.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The fix is complete. Let me provide a summary of the changes:\n\n## Summary\n\nThe issue was in `django/utils/http.py` in the `parse_http_date` function. The original code had hardcoded logic for interpreting two-digit years:\n- Years 0-69 → 2000-2069\n- Years 70-99 → 1970-1999\n\nThis doesn't comply with RFC 7231, which requires:\n> Recipients of a timestamp value in rfc850-date format, which uses a two-digit year, MUST interpret a timestamp that appears to be more than 50 years in the future as representing the most recent year in the past that had the same last two digits.\n\n### The Fix\n\nChanged the two-digit year interpretation to be based on the current year:\n- Calculate `threshold = current_year - 50`\n- If two-digit year >= `threshold % 100`, interpret as 1900+year\n- Otherwise, interpret as 2000+year\n\nThis ensures that no interpretation is more than 50 years in the future, as required by RFC 7231.\n\n### Testing\n\nAll existing tests pass, and the fix correctly handles:\n- Historical dates (e.g., 1994 → 1994)\n- Future dates within 50 years (e.g., 2069 → 2069)\n- Dates that would be >50 years in the future (e.g., 2077 → 1977)\n\n"
+      },
+      {
+        "type": "toolCall",
+        "id": "tyL275dE6GCrew4ChpK6issyUWxnL2xp",
+        "name": "bash",
+        "arguments": {
+          "command": "cd /testbed && git diff"
+        }
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 17,
+      "output": 404,
+      "cacheRead": 23166,
+      "cacheWrite": 0,
+      "totalTokens": 23587,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1780730373783,
+    "responseId": "chatcmpl-XP5anSXZn5tD7Cf7jowkvXBJsPlNwny3",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "tyL275dE6GCrew4ChpK6issyUWxnL2xp",
+    "toolName": "bash",
+    "content": [
+      {
+        "type": "text",
+        "text": "diff --git a/django/utils/http.py b/django/utils/http.py\nindex 572cfb4347..904f79939e 100644\n--- a/django/utils/http.py\n+++ b/django/utils/http.py\n@@ -176,10 +176,16 @@ def parse_http_date(date):\n     try:\n         year = int(m.group('year'))\n         if year < 100:\n-            if year < 70:\n-                year += 2000\n-            else:\n+            # RFC 7231: Recipients of a timestamp value in rfc850-date format,\n+            # which uses a two-digit year, MUST interpret a timestamp that\n+            # appears to be more than 50 years in the future as representing\n+            # the most recent year in the past that had the same last two digits.\n+            current_year = datetime.datetime.now(datetime.timezone.utc).year\n+            threshold = current_year - 50\n+            if year >= threshold % 100:\n                 year += 1900\n+            else:\n+                year += 2000\n         month = MONTHS.index(m.group('mon').lower()) + 1\n         day = int(m.group('day'))\n         hour = int(m.group('hour'))\n"
+      }
+    ],
+    "isError": false,
+    "timestamp": 1780730388347
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The fix is complete and minimal. The git diff shows exactly the changes made to fix the issue. All tests pass and the fix correctly implements the RFC 7231 requirement.\n",
+        "thinkingSignature": "reasoning_content"
+      },
+      {
+        "type": "text",
+        "text": "The fix is complete. The change is minimal and only modifies the two-digit year interpretation logic in `parse_http_date` to comply with RFC 7231."
+      }
+    ],
+    "api": "openai-completions",
+    "provider": "llama.cpp",
+    "model": "local-model",
+    "usage": {
+      "input": 326,
+      "output": 75,
+      "cacheRead": 23587,
+      "cacheWrite": 0,
+      "totalTokens": 23988,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      }
+    },
+    "stopReason": "stop",
+    "timestamp": 1780730388348,
+    "responseId": "chatcmpl-3bn609i25R5bU9YanH42Qboo7dVkrIJS",
+    "responseModel": "Qwen3.5-122B-A10B-GGUF-MTP-Q4_K_M.gguf"
+  }
+]
