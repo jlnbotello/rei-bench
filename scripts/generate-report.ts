@@ -27,6 +27,7 @@ interface ModelStats {
   tag: string | null;
   backend: string;
   rocm: string;
+  inferenceProfile?: string | null;
   totalTasks: number;
   passedTasks: number;
   successRate: number;
@@ -71,8 +72,8 @@ async function main() {
     platformDirs = await getDirectories(benchmarkResultsDir);
   }
   
-  // Array of { platform, modelDir, modelName, tag, backend, rocm }
-  const scanTargets: Array<{ platform: Platform; dir: string; name: string; tag: string | null; backend: string; rocm: string }> = [];
+  // Array of { platform, modelDir, modelName, tag, backend, rocm, inferenceProfile }
+  const scanTargets: Array<{ platform: Platform; dir: string; name: string; tag: string | null; backend: string; rocm: string; inferenceProfile: string | null }> = [];
 
   for (const dirName of platformDirs) {
     const fullPath = join(benchmarkResultsDir, dirName);
@@ -99,10 +100,11 @@ async function main() {
     const subDirs = await getDirectories(fullPath);
     for (const subDir of subDirs) {
       if (subDir.endsWith("_results")) {
-        // Read optional run-meta.json for model tag, backend, and rocm
+        // Read optional run-meta.json for model tag, backend, rocm, and inference profile
         let modelTag: string | null = null;
         let backend = "unknown";
         let rocm = "N/A";
+        let inferenceProfile: string | null = null;
         const metaPath = join(fullPath, subDir, "run-meta.json");
         const metaContent = await safeReadFile(metaPath);
         if (metaContent) {
@@ -111,6 +113,7 @@ async function main() {
             modelTag = meta.modelTag || null;
             if (meta.backend) backend = meta.backend;
             if (meta.rocm) rocm = meta.rocm;
+            if (meta.inferenceProfile) inferenceProfile = meta.inferenceProfile;
           } catch {}
         }
 
@@ -126,7 +129,8 @@ async function main() {
           name: modelName,
           tag: modelTag,
           backend,
-          rocm
+          rocm,
+          inferenceProfile
         });
       }
     }
@@ -182,6 +186,7 @@ async function main() {
         tag: target.tag,
         backend: target.backend,
         rocm: target.rocm,
+        inferenceProfile: target.inferenceProfile,
         totalTasks,
         passedTasks,
         successRate: passedTasks / totalTasks,

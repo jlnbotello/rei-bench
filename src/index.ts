@@ -521,6 +521,7 @@ async function main() {
       engine: { type: "string" }, // backward compat alias for --provider
       "rocm-version": { type: "string", default: "7.2.4" },
       port: { type: "string" },
+      "inference-profile": { type: "string" },
     },
     allowPositionals: true,
   });
@@ -530,7 +531,7 @@ async function main() {
 
   const targetPath = positionals[0];
   if (!targetPath) {
-    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--provider llama.cpp|ds4|openrouter] [--model model-id] [--judge-model provider/model-id] [--model-tag tag] [--platform platform-id] [--rocm-version 7.2.4] [--port 8080]");
+    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--provider llama.cpp|ds4|openrouter] [--model model-id] [--judge-model provider/model-id] [--model-tag tag] [--platform platform-id] [--rocm-version 7.2.4] [--port 8080] [--inference-profile params]");
     process.exit(1);
   }
 
@@ -551,7 +552,7 @@ async function main() {
   let judgeModelReq;
   if (values["judge-model"]) {
     const parts = values["judge-model"].split("/");
-    judgeModelReq = parts.length > 1 ? getModel(parts[0], parts[1]) : undefined;
+    judgeModelReq = parts.length > 1 ? getModel(parts[0] as any, parts[1]) : undefined;
     if (!judgeModelReq) console.warn(`[WARN] Could not resolve judge model ${values["judge-model"]}. Using default.`);
   }
 
@@ -609,11 +610,14 @@ async function main() {
   }
 
   await mkdir(outputDir, { recursive: true });
-  const runMeta = {
+  const runMeta: any = {
     modelTag,
     backend: provider,
     rocm: values["rocm-version"]
   };
+  if (values["inference-profile"]) {
+    runMeta.inferenceProfile = values["inference-profile"];
+  }
   await writeFile(join(outputDir, "run-meta.json"), JSON.stringify(runMeta, null, 2));
   console.log(`[INFO] Saving results to directory: ${outputDir}`);
 

@@ -7,6 +7,7 @@ const App = {
         const error = ref(null);
         const searchQuery = ref('');
         const activeModal = ref(null);
+        const activeModelModal = ref(null);
         const activePlatformId = ref(null);
 
         const fetchData = async () => {
@@ -70,17 +71,28 @@ const App = {
             let base = clean;
             let quant = null;
 
-            // First check for verbose IQ quants (e.g., IQ2XXS-w2Q2K-AProjQ8...)
-            const iqMatch = clean.match(/(.*?)-(IQ.*)$/i);
-            if (iqMatch) {
-                base = iqMatch[1];
-                quant = iqMatch[2];
+            // Check for custom "-to-" platform quantization format
+            const toMatch = clean.match(/(.*?)-to-(.*)$/i);
+            if (toMatch) {
+                let tempBase = toMatch[1];
+                let tempQuant = toMatch[2];
+                // Strip common model details like MTP-BF16 before the "-to-" prefix if they exist
+                tempBase = tempBase.replace(/-MTP-BF16$/i, '');
+                base = tempBase;
+                quant = tempQuant.replace(/_/g, '.');
             } else {
-                // Check standard Q or UD-Q quants
-                const match = clean.match(/(.*?)-(UD-Q[A-Z0-9_]+|Q[A-Z0-9_]+)$/i);
-                if (match) {
-                    base = match[1];
-                    quant = match[2];
+                // First check for verbose IQ quants (e.g., IQ2XXS-w2Q2K-AProjQ8...)
+                const iqMatch = clean.match(/(.*?)-(IQ.*)$/i);
+                if (iqMatch) {
+                    base = iqMatch[1];
+                    quant = iqMatch[2];
+                } else {
+                    // Check standard Q or UD-Q quants
+                    const match = clean.match(/(.*?)-(UD-Q[A-Z0-9_]+|Q[A-Z0-9_]+)$/i);
+                    if (match) {
+                        base = match[1];
+                        quant = match[2];
+                    }
                 }
             }
             
@@ -112,12 +124,23 @@ const App = {
         };
 
         const openModal = (taskId, modelId, result, tag) => {
-            activeModal.value = { taskId, modelId, result, tag };
+            const model = data.value && data.value.models ? data.value.models.find(m => m.id === modelId) : null;
+            activeModal.value = { taskId, modelId, result, tag, model };
             document.body.style.overflow = 'hidden'; 
         };
 
         const closeModal = () => {
             activeModal.value = null;
+            document.body.style.overflow = 'auto';
+        };
+
+        const openModelModal = (model) => {
+            activeModelModal.value = model;
+            document.body.style.overflow = 'hidden';
+        };
+
+        const closeModelModal = () => {
+            activeModelModal.value = null;
             document.body.style.overflow = 'auto';
         };
 
@@ -153,11 +176,14 @@ const App = {
             filteredModels,
             filteredTasks,
             activeModal,
+            activeModelModal,
             parseModelName,
             formatDuration,
             getScoreClass,
             openModal,
             closeModal,
+            openModelModal,
+            closeModelModal,
             highlightDiff,
             formatDate
         };
