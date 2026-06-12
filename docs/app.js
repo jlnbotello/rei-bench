@@ -8,7 +8,8 @@ const App = {
         const searchQuery = ref('');
         const activeModal = ref(null);
         const activeModelModal = ref(null);
-        const activePlatformId = ref(null);
+        const selectedPlatformIds = ref([]);
+        const modelSearchQuery = ref('');
 
         const fetchData = async () => {
             try {
@@ -22,7 +23,7 @@ const App = {
                 data.value = json;
 
                 if (json.platforms && json.platforms.length > 0) {
-                    activePlatformId.value = json.platforms[0].id;
+                    selectedPlatformIds.value = json.platforms.map(p => p.id);
                 }
 
             } catch (e) {
@@ -37,15 +38,37 @@ const App = {
             fetchData();
         });
 
-        const activePlatform = computed(() => {
-            if (!data.value || !data.value.platforms) return null;
-            return data.value.platforms.find(p => p.id === activePlatformId.value) || null;
-        });
+        const getPlatformName = (platformId) => {
+            if (!data.value || !data.value.platforms) return platformId;
+            const p = data.value.platforms.find(pl => pl.id === platformId);
+            return p ? p.name : platformId;
+        };
 
         const filteredModels = computed(() => {
             if (!data.value || !data.value.models) return [];
-            return data.value.models.filter(m => m.platformId === activePlatformId.value);
+            let models = data.value.models.filter(m => selectedPlatformIds.value.includes(m.platformId));
+            
+            if (modelSearchQuery.value) {
+                const query = modelSearchQuery.value.toLowerCase();
+                models = models.filter(m => {
+                    const parsed = parseModelName(m.name);
+                    const baseMatch = parsed.base.toLowerCase().includes(query);
+                    const quantMatch = parsed.quant ? parsed.quant.toLowerCase().includes(query) : false;
+                    const tagMatch = m.tag ? m.tag.toLowerCase().includes(query) : false;
+                    return baseMatch || quantMatch || tagMatch;
+                });
+            }
+            return models;
         });
+
+        const togglePlatform = (platformId) => {
+            const index = selectedPlatformIds.value.indexOf(platformId);
+            if (index === -1) {
+                selectedPlatformIds.value.push(platformId);
+            } else {
+                selectedPlatformIds.value.splice(index, 1);
+            }
+        };
 
         const filteredTasks = computed(() => {
             if (!data.value) return [];
@@ -81,23 +104,34 @@ const App = {
                 base = tempBase;
                 quant = tempQuant.replace(/_/g, '.');
             } else {
-                // Check for hybrid layer quants (e.g., Layers37-42Q4KExperts-...)
-                const layerMatch = clean.match(/(.*?)-(Layers\d.*)$/i);
-                if (layerMatch) {
-                    base = layerMatch[1];
-                    quant = layerMatch[2];
+                // Check for mixed-precision quants (e.g., Q4KExperts-F16HC-...-imatrix)
+                const mixedMatch = clean.match(/^(.*?)-((Q\d+[A-Z]*Experts|Q\d+K[A-Z]*Experts)-.+)$/i);
+                if (mixedMatch) {
+                    base = mixedMatch[1];
+                    quant = mixedMatch[2];
+                    // Strip trailing -chat-v2-imatrix or similar suffixes for cleaner display
+                    quant = quant.replace(/-chat-v\d+-imatrix$/i, '');
+                    quant = quant.replace(/-chat-v\d+$/i, '');
+                    quant = quant.replace(/-imatrix$/i, '');
                 } else {
-                    // First check for verbose IQ quants (e.g., IQ2XXS-w2Q2K-AProjQ8...)
-                    const iqMatch = clean.match(/(.*?)-(IQ.*)$/i);
-                    if (iqMatch) {
-                        base = iqMatch[1];
-                        quant = iqMatch[2];
+                    // Check for hybrid layer quants (e.g., Layers37-42Q4KExperts-...)
+                    const layerMatch = clean.match(/(.*?)-(Layers\d.*)$/i);
+                    if (layerMatch) {
+                        base = layerMatch[1];
+                        quant = layerMatch[2];
                     } else {
-                        // Check standard Q or UD-Q quants
-                        const match = clean.match(/(.*?)-(UD-Q[A-Z0-9_]+|Q[A-Z0-9_]+)$/i);
-                        if (match) {
-                            base = match[1];
-                            quant = match[2];
+                        // First check for verbose IQ quants (e.g., IQ2XXS-w2Q2K-AProjQ8...)
+                        const iqMatch = clean.match(/(.*?)-(IQ.*)$/i);
+                        if (iqMatch) {
+                            base = iqMatch[1];
+                            quant = iqMatch[2];
+                        } else {
+                            // Check standard Q or UD-Q quants
+                            const match = clean.match(/(.*?)-(UD-Q[A-Z0-9_]+|Q[A-Z0-9_]+)$/i);
+                            if (match) {
+                                base = match[1];
+                                quant = match[2];
+                            }
                         }
                     }
                 }
@@ -122,6 +156,12 @@ const App = {
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = totalSeconds % 60;
             return `${minutes}m ${seconds}s`;
+        };
+
+        const getPlatformRam = (platformId) => {
+            if (!data.value || !data.value.platforms) return null;
+            const p = data.value.platforms.find(pl => pl.id === platformId);
+            return p ? p.ram : null;
         };
 
         const getScoreClass = (rate) => {
@@ -178,8 +218,8 @@ const App = {
             loading,
             error,
             searchQuery,
-            activePlatformId,
-            activePlatform,
+            modelSearchQuery,
+            selectedPlatformIds,
             filteredModels,
             filteredTasks,
             activeModal,
@@ -187,6 +227,9 @@ const App = {
             parseModelName,
             formatDuration,
             getScoreClass,
+            getPlatformRam,
+            getPlatformName,
+            togglePlatform,
             openModal,
             closeModal,
             openModelModal,
