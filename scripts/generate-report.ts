@@ -179,6 +179,9 @@ async function main() {
     }
 
     if (totalTasks > 0) {
+      const relativeDir = target.dir.substring(target.dir.indexOf("benchmark_results"));
+      const runUrl = `https://github.com/kyuz0/pi-bench/tree/main/${relativeDir}`.replace(/\\/g, "/");
+
       models.push({
         id: modelUniqueId,
         platformId: target.platform.id,
@@ -187,6 +190,7 @@ async function main() {
         backend: target.backend,
         rocm: target.rocm,
         inferenceProfile: target.inferenceProfile,
+        runUrl: runUrl,
         totalTasks,
         passedTasks,
         successRate: passedTasks / totalTasks,
