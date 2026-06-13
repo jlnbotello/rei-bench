@@ -623,11 +623,11 @@ async function main() {
   }
 
   const modelTag = values["model-tag"] as string | undefined;
-  const isLocalProvider = provider === "llama.cpp" || provider === "ds4";
+  const isLocalProvider = provider === "llama.cpp" || provider === "ds4" || provider === "vllm";
   let outputDir = "results";
   if (isLocalProvider) {
     try {
-      const fetchPort = values.port || (provider === "ds4" ? "8000" : "8080");
+      const fetchPort = values.port || (provider === "ds4" || provider === "vllm" ? "8000" : "8080");
       const res = await fetch(`http://localhost:${fetchPort}/v1/models`);
       const data = await res.json();
       if (data && data.data && data.data.length > 0) {
