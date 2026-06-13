@@ -128,6 +128,9 @@ for task_file in "${TASK_FILES[@]}"; do
 
   if [ $EXIT_CODE -eq 0 ]; then
     PASSED=$((PASSED + 1))
+  elif [ $EXIT_CODE -eq 2 ]; then
+    echo "[FATAL] Inference backend is unreachable or crashed. Aborting entire benchmark run."
+    exit 2
   else
     FAILED=$((FAILED + 1))
     echo "[WARN] Task $TASK_ID exited with code $EXIT_CODE"

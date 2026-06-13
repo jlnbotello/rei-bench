@@ -741,4 +741,10 @@ async function main() {
   console.log(`======================================================\n`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); }).then(() => process.exit(0));
+main().catch((e) => {
+  console.error(e);
+  if (e instanceof Error && e.message.includes("Inference backend is unreachable")) {
+    process.exit(2);
+  }
+  process.exit(1);
+}).then(() => process.exit(0));
