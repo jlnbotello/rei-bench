@@ -625,13 +625,16 @@ async function main() {
   const modelTag = values["model-tag"] as string | undefined;
   const isLocalProvider = provider === "llama.cpp" || provider === "ds4" || provider === "vllm";
   let outputDir = "results";
+  let exactModelId = agentModelReq ? agentModelReq.id : "unknown";
+
   if (isLocalProvider) {
     try {
       const fetchPort = values.port || (provider === "ds4" || provider === "vllm" ? "8000" : "8080");
       const res = await fetch(`http://localhost:${fetchPort}/v1/models`);
       const data = await res.json();
       if (data && data.data && data.data.length > 0) {
-        const quantName = data.data[0].id.replace(/[^a-zA-Z0-9_-]/g, "_");
+        exactModelId = data.data[0].id;
+        const quantName = exactModelId.replace(/[^a-zA-Z0-9_-]/g, "_");
         outputDir = `${quantName}_results`;
       } else if (agentModelReq) {
         outputDir = `${agentModelReq.id.replace(/\\\//g, "_")}_results`;
@@ -684,7 +687,8 @@ async function main() {
   const runMeta: any = {
     modelTag,
     backend: provider,
-    rocm: values["rocm-version"]
+    rocm: values["rocm-version"],
+    exactModelId
   };
   if (values["inference-profile"]) {
     runMeta.inferenceProfile = values["inference-profile"];

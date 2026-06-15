@@ -105,6 +105,7 @@ async function main() {
         let backend = "unknown";
         let rocm = "N/A";
         let inferenceProfile: string | null = null;
+        let exactModelId: string | null = null;
         const metaPath = join(fullPath, subDir, "run-meta.json");
         const metaContent = await safeReadFile(metaPath);
         if (metaContent) {
@@ -114,6 +115,7 @@ async function main() {
             if (meta.backend) backend = meta.backend;
             if (meta.rocm) rocm = meta.rocm;
             if (meta.inferenceProfile) inferenceProfile = meta.inferenceProfile;
+            if (meta.exactModelId) exactModelId = meta.exactModelId;
           } catch {}
         }
 
@@ -121,6 +123,9 @@ async function main() {
         let modelName = subDir.replace("_results", "");
         if (modelTag) {
           modelName = modelName.replace(new RegExp(`-${modelTag}$`), "");
+        }
+        if (exactModelId) {
+          modelName = exactModelId;
         }
 
         scanTargets.push({

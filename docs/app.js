@@ -131,6 +131,13 @@ const App = {
                             if (match) {
                                 base = match[1];
                                 quant = match[2];
+                            } else {
+                                // Check for common non-GGUF quant formats (AWQ, FP8, GPTQ, EXL2, etc)
+                                const otherMatch = clean.match(/(.*?)-((AWQ|FP8|GPTQ|EXL2|FP16|BF16|INT8|INT4).*)$/i);
+                                if (otherMatch) {
+                                    base = otherMatch[1];
+                                    quant = otherMatch[2];
+                                }
                             }
                         }
                     }
