@@ -22,9 +22,6 @@ const App = {
                 json.tasks.sort((a, b) => a.id.localeCompare(b.id));
                 data.value = json;
 
-                if (json.platforms && json.platforms.length > 0) {
-                    selectedPlatformIds.value = json.platforms.map(p => p.id);
-                }
 
             } catch (e) {
                 console.error("Could not load data.json:", e);
@@ -46,7 +43,11 @@ const App = {
 
         const filteredModels = computed(() => {
             if (!data.value || !data.value.models) return [];
-            let models = data.value.models.filter(m => selectedPlatformIds.value.includes(m.platformId));
+            let models = data.value.models;
+            
+            if (selectedPlatformIds.value.length > 0) {
+                models = models.filter(m => selectedPlatformIds.value.includes(m.platformId));
+            }
             
             if (modelSearchQuery.value) {
                 const query = modelSearchQuery.value.toLowerCase();
