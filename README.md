@@ -50,7 +50,7 @@ Benchmark tasks are defined as simple JSON files. See `tasks/curated/easy.json` 
 
 ## Included Datasets
 
-`pi-bench` supports multiple datasets to evaluate the agent's performance.
+`rei-bench` supports multiple datasets to evaluate the agent's performance.
 
 ### SWE-bench Verified Mini (Recommended)
 A highly curated subset of 50 verified tasks from the SWE-bench dataset. This is the recommended dataset for rapid, high-quality evaluation as it tests a broad set of capabilities without taking days to run.
@@ -91,17 +91,19 @@ Put API keys / endpoints in `.env` (see [Configuring Models](#configuring-models
 Unlike pi-bench, there is no `models.json` and no `/v1/models` auto-detection — pass
 `--model` explicitly.
 
-> **Note:** the SWE-bench Docker runner below still provisions `bun` + `pi` deps inside
-> the container; running `rei` in-container requires building `rei` there too, which is
-> **not yet wired in this fork**. Host-side curated runs (see *Local Execution*) are the
-> supported path today.
+> **Note:** the SWE-bench Docker runner bind-mounts the sibling `rei` build into the
+> container at `/rei` (so `rei-bench`'s deep import of `../../rei/dist` resolves there).
+> **You must build `rei` first** (`npm run build` in the `rei` repo); the runner checks for
+> `rei/dist` and aborts otherwise. If `rei` is not a sibling of `rei-bench`, set `REI_DIR`
+> to its path. Because the runner uses `--network host`, **local** providers (`llmstudio`,
+> `ollama`) running on the host are reachable from inside the container.
 
 **Example: local LM Studio**
 ```bash
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider llmstudio \
   --model qwen/qwen3.6-35b-a3b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform strix-halo \
   --timeout 45
 ```
@@ -111,7 +113,7 @@ Unlike pi-bench, there is no `models.json` and no `/v1/models` auto-detection �
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider ollama \
   --model qwen2.5-coder:14b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform strix-halo \
   --timeout 45
 ```
@@ -125,7 +127,7 @@ and set `OPENROUTER_API_KEY` in `.env`.
 ./run-swe-bench.sh tasks/verified-mini/django__django-11790.json \
   --provider openrouter \
   --model deepseek/deepseek-v4-flash \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform openrouter \
   --timeout 30
 ```
@@ -145,18 +147,18 @@ For non-SWE-bench tasks (curated, custom), use the Docker runner:
 ```bash
 ./run-docker.sh tasks/curated/ \
   --provider llmstudio --model qwen/qwen3.6-35b-a3b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform strix-halo \
   --timeout 30
 ```
 
 ### Local Execution (Use with Caution)
 Running the benchmark locally executes the agent on your host machine. This is the
-supported path for `rei` today. `--judge-model` is required.
+supported path for `rei` today. `--judge-provider` and `--judge-model` are required.
 ```bash
 bun run src/index.ts tasks/curated/easy.json \
   --provider llmstudio --model qwen/qwen3.6-35b-a3b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --timeout 30
 ```
 
@@ -170,7 +172,8 @@ bun run src/index.ts tasks/curated/easy.json \
 |---|---|---|
 | `--provider <name>` | rei provider: `llmstudio`, `ollama`, `openrouter`, `groq`, `gemini`, `huggingface` | `llmstudio` |
 | `--model <model-id>` | Agent model ID for that provider (e.g. `qwen/qwen3.6-35b-a3b`) | — |
-| `--judge-model <provider/id>` | Judge model, resolved via pi-ai (e.g. `openrouter/google/gemini-2.5-flash`). **Required.** | — |
+| `--judge-provider <name>` | Judge provider, resolved via pi-ai (e.g. `openrouter`, `google`). **Required.** | — |
+| `--judge-model <model-id>` | Judge model ID for that provider (e.g. `google/gemini-2.5-flash`). **Required.** | — |
 | `--engine <name>` | Backward-compatible alias for `--provider` | — |
 
 `rei-bench` translates `--provider` / `--model` into the env vars `rei` reads:
@@ -195,7 +198,7 @@ The judge call enables `reasoning: "low"`, so reasoning-mandatory judge models
 # Local LM Studio
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider llmstudio --model qwen/qwen3.6-35b-a3b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform strix-halo \
   --rocm-version 7.2.4 \
   --timeout 45
@@ -203,7 +206,7 @@ The judge call enables `reasoning: "low"`, so reasoning-mandatory judge models
 # Local Ollama
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider ollama --model qwen2.5-coder:14b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform strix-halo \
   --rocm-version 7.2.4 \
   --timeout 45
@@ -211,21 +214,21 @@ The judge call enables `reasoning: "low"`, so reasoning-mandatory judge models
 # OpenRouter cloud (agent + judge)
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider openrouter --model deepseek/deepseek-v4-flash \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform openrouter \
   --timeout 30
 
 # Single task
 ./run-swe-bench.sh tasks/verified-mini/django__django-11790.json \
   --provider openrouter --model deepseek/deepseek-v4-flash \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform openrouter \
   --timeout 30
 
 # Override context window for a run (e.g. limit to 90k tokens)
 ./run-swe-bench.sh tasks/verified-mini/ \
   --provider llmstudio --model qwen/qwen3.6-35b-a3b \
-  --judge-model openrouter/google/gemini-2.5-flash \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
   --platform strix-halo \
   --context 90000 \
   --timeout 45
@@ -242,7 +245,7 @@ CLI flags; everything else goes in `.env`.
 ### API Keys & endpoints
 Create a `.env` file in the root `rei-bench/` directory:
 ```
-# Judge (pick per --judge-model)
+# Judge (pick per --judge-provider)
 GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 
@@ -270,10 +273,10 @@ helpers no-op when telemetry is off). When enabled, each task yields a
 
 When a single run completes, it outputs a JSON artifact to the current directory (e.g. `results-curated-easy.json`).
 
-When running a **batch** (providing a directory like `tasks/verified-mini/`), `pi-bench` automatically generates a uniquely named directory for the results based on the model (e.g., `Qwen3_6-35B-A3B-UD-Q8_K_XL_gguf_results/`).
+When running a **batch** (providing a directory like `tasks/verified-mini/`), `rei-bench` automatically generates a uniquely named directory for the results based on the model (e.g., `Qwen3_6-35B-A3B-UD-Q8_K_XL_gguf_results/`).
 
 ### Populating the Dashboard
-`pi-bench` includes a dynamic HTML dashboard that can track results across multiple hardware platforms. To get your results onto the dashboard:
+`rei-bench` includes a dynamic HTML dashboard that can track results across multiple hardware platforms. To get your results onto the dashboard:
 
 1. **Create your platform metadata**: If it's a new platform, create a folder for it inside `benchmark_results/` and add a `platform.json` describing your hardware:
    ```bash
@@ -291,7 +294,7 @@ When running a **batch** (providing a directory like `tasks/verified-mini/`), `p
 2. **Run your benchmark with the `--platform` flag**:
    ```bash
    ./run-swe-bench.sh tasks/verified-mini/ \
-     --judge-model google/gemini-3.1-pro-preview \
+     --judge-provider openrouter --judge-model google/gemini-3.1-pro-preview \
      --platform r9700
    ```
    *This automatically routes the results folder (e.g. `Qwen3_6..._results`) right into `benchmark_results/r9700/`.*
@@ -300,6 +303,12 @@ When running a **batch** (providing a directory like `tasks/verified-mini/`), `p
    This script parses all new results in `benchmark_results/` and compiles them into a single `docs/data.json` file. The frontend dashboard (`app.js`) requires this JSON file to display data.
    ```bash
    bun run scripts/generate-report.ts
+   ```
+   The "view transcript / view run" links in the dashboard are built from a GitHub base
+   URL. By default these links are **omitted**; set `REPORT_REPO_URL` to this repo so they
+   resolve to your committed results:
+   ```bash
+   REPORT_REPO_URL=https://github.com/<you>/rei-bench bun run scripts/generate-report.ts
    ```
 
 4. **Serve the dashboard**:

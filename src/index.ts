@@ -67,7 +67,7 @@ async function runTask(taskFile: string, judgeModelReq: any, outputDir: string =
 
   const sweTestbed = "/testbed";
   const isSweContainer = existsSync(sweTestbed);
-  const tmpDir = isSweContainer ? sweTestbed : await mkdtemp(join(tmpdir(), "pi-bench-"));
+  const tmpDir = isSweContainer ? sweTestbed : await mkdtemp(join(tmpdir(), "rei-bench-"));
   console.log(`[INFO] Working directory: ${tmpDir} (SWE container: ${isSweContainer})`);
 
   // Hoisted so the `finally` block can tear down MCP regardless of where we fail.
@@ -319,9 +319,9 @@ ${task.prompt}`;
 
     console.log(`[INFO] Running LLM judge...`);
     // The judge is independent of the rei agent (Gemini via pi-ai). There is no
-    // agent-side fallback model anymore, so --judge-model is required.
+    // agent-side fallback model anymore, so the judge flags are required.
     const judgeModel = judgeModelReq;
-    if (!judgeModel) throw new Error("Judge model not found — pass --judge-model <provider/id>");
+    if (!judgeModel) throw new Error("Judge model not found — pass --judge-provider <provider> --judge-model <model-id>");
     const auth = await modelRegistry.getApiKeyAndHeaders(judgeModel);
     if (!auth.ok) throw new Error("Judge auth failed: " + auth.error);
 
@@ -484,9 +484,9 @@ async function setupTelemetry(): Promise<void> {
   const port = Number(process.env.LMNR_GRPC_PORT ?? 8001);
   if (await canConnect(host, port)) {
     initTelemetry();
-    console.log(`[telemetry] Laminar tracing enabled (${host}:${port}).`);
+    console.log(`[TELEMETRY] Laminar tracing enabled (${host}:${port}).`);
   } else {
-    console.warn(`[telemetry] Laminar not reachable at ${host}:${port} — tracing disabled for this run.`);
+    console.warn(`[TELEMETRY] Laminar not reachable at ${host}:${port} — tracing disabled for this run.`);
   }
 }
 
@@ -498,6 +498,7 @@ async function main() {
     args: process.argv.slice(2),
     options: {
       model: { type: "string" },
+      "judge-provider": { type: "string" },
       "judge-model": { type: "string" },
       "model-tag": { type: "string" },
       timeout: { type: "string", default: "30" },
@@ -522,7 +523,7 @@ async function main() {
 
   const targetPath = positionals[0];
   if (!targetPath && !values["print-output-dir"]) {
-    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--provider llama.cpp|ds4|openrouter] [--model model-id] [--judge-model provider/model-id] [--model-tag tag] [--platform platform-id] [--rocm-version 7.2.4] [--port 8080] [--context tokens] [--inference-profile params]");
+    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--provider openrouter|llmstudio|ollama|...] [--model model-id] [--judge-provider provider] [--judge-model model-id] [--model-tag tag] [--platform platform-id] [--rocm-version 7.2.4] [--port 8080] [--context tokens] [--inference-profile params]");
     process.exit(1);
   }
 
@@ -542,15 +543,20 @@ async function main() {
     else console.warn(`[WARN] Unknown provider "${provider}" — cannot map --model to an env var.`);
   }
 
-  // Judge model is independent of the agent (resolved via pi-ai). Format is
-  // <provider>/<model-id>; the model-id itself may contain slashes (e.g.
-  // OpenRouter's "openrouter/deepseek/deepseek-chat"), so keep everything after
-  // the first segment as the id.
+  // Judge model is independent of the agent (resolved via pi-ai). Provider and
+  // model are separate flags — mirroring the agent's --provider/--model — because
+  // model ids legitimately contain slashes (e.g. "google/gemini-3.1-pro-preview"),
+  // so packing both into one slash-delimited string is ambiguous. No default for
+  // --judge-provider: the judge backend often differs from the agent's (e.g. local
+  // agent, OpenRouter judge), so it must be stated explicitly.
   let judgeModelReq;
-  if (values["judge-model"]) {
-    const parts = values["judge-model"].split("/");
-    judgeModelReq = parts.length > 1 ? getModel(parts[0] as any, parts.slice(1).join("/")) : undefined;
-    if (!judgeModelReq && !values["print-output-dir"]) console.warn(`[WARN] Could not resolve judge model ${values["judge-model"]}. Using default.`);
+  if (values["judge-model"] || values["judge-provider"]) {
+    if (!values["judge-provider"] || !values["judge-model"]) {
+      if (!values["print-output-dir"]) console.warn(`[WARN] Both --judge-provider and --judge-model are required.`);
+    } else {
+      judgeModelReq = getModel(values["judge-provider"] as any, values["judge-model"] as string);
+      if (!judgeModelReq && !values["print-output-dir"]) console.warn(`[WARN] Could not resolve judge model ${values["judge-provider"]}/${values["judge-model"]}.`);
+    }
   }
 
   // Results-dir naming: prefer the explicit --model, then the provider's default
