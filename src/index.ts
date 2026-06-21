@@ -1,10 +1,21 @@
-import {
-  AuthStorage,
-  createAgentSession,
-  ModelRegistry,
-  SessionManager,
-} from "@mariozechner/pi-coding-agent";
+// Judge stays on pi-ai/Gemini: AuthStorage + ModelRegistry are kept ONLY to
+// resolve the judge model's API key/headers. The AGENT is now `rei`.
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import { getModel } from "@mariozechner/pi-ai";
+// `rei` is not published; it ships a compiled dist/ (no .d.ts) and lives as a
+// sibling repo. Deep-import its Agent directly — rei's own node_modules resolves
+// its internals at runtime. @ts-ignore: dist has no type declarations.
+// @ts-ignore
+import { Agent } from "../../rei/dist/core/agent.js";
+// @ts-ignore
+import { createModelProvider } from "../../rei/dist/providers/provider-factory.js";
+// @ts-ignore
+import type { ChatSession } from "../../rei/dist/chat/types.js";
+// rei's spans are created unconditionally, so Laminar must be initialized before
+// any Agent runs (mirrors rei/src/main.ts). Idempotent + self-disables when
+// LMNR_PROJECT_API_KEY is unset. shutdown flushes spans on exit.
+// @ts-ignore
+import { initTelemetry, shutdownTelemetry } from "../../rei/dist/telemetry/init.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
@@ -12,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { existsSync } from "node:fs";
+import * as net from "node:net";
 
 const execAsync = promisify(exec);
 
@@ -45,7 +57,7 @@ function buildSweTestCommand(task: any): string {
   return `cd /testbed && ${python} -m pytest --tb=short`;
 }
 
-async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any, outputDir: string = ".", timeoutMin: number = 30, provider: string = "llama.cpp", port?: string, contextWindowOverride?: number) {
+async function runTask(taskFile: string, judgeModelReq: any, outputDir: string = ".", timeoutMin: number = 30) {
   const taskContent = await readFile(taskFile, "utf-8");
   const task = JSON.parse(taskContent);
 
@@ -55,8 +67,11 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
 
   const sweTestbed = "/testbed";
   const isSweContainer = existsSync(sweTestbed);
-  const tmpDir = isSweContainer ? sweTestbed : await mkdtemp(join(tmpdir(), "pi-bench-"));
+  const tmpDir = isSweContainer ? sweTestbed : await mkdtemp(join(tmpdir(), "rei-bench-"));
   console.log(`[INFO] Working directory: ${tmpDir} (SWE container: ${isSweContainer})`);
+
+  // Hoisted so the `finally` block can tear down MCP regardless of where we fail.
+  let agent: Agent | undefined;
 
   try {
     if (isSweContainer) {
@@ -75,121 +90,29 @@ async function runTask(taskFile: string, agentModelReq: any, judgeModelReq: any,
     }
 
     console.log(`[INFO] Initializing agent session...`);
+
+    // Judge auth only: pi's ModelRegistry resolves the Gemini judge's API key.
+    // The agent itself no longer uses this registry.
     const authStorage = AuthStorage.create();
-
     const localModelsPath = join(process.cwd(), "models.json");
-    let modelRegistry;
-    if (existsSync(localModelsPath)) {
-      console.log(`[INFO] Using local models.json configuration`);
-      if (port) {
-        const modelsContent = await readFile(localModelsPath, "utf-8");
-        const modelsData = JSON.parse(modelsContent);
-        if (modelsData.providers && modelsData.providers[provider] && modelsData.providers[provider].baseUrl) {
-          modelsData.providers[provider].baseUrl = modelsData.providers[provider].baseUrl.replace(/:\d+/, `:${port}`);
-        }
-        const tmpModelsPath = tmpDir + "-models.json";
-        await writeFile(tmpModelsPath, JSON.stringify(modelsData));
-        modelRegistry = ModelRegistry.create(authStorage, tmpModelsPath);
-      } else {
-        modelRegistry = ModelRegistry.create(authStorage, localModelsPath);
-      }
-    } else {
-      if (port) {
-        const modelsData = {
-          providers: {
-            [provider]: {
-              baseUrl: `http://localhost:${port}/v1`,
-              api: "openai-completions",
-              apiKey: "none",
-              models: [{ id: "local-model", contextWindow: contextWindowOverride || 128000, maxTokens: 65536 }]
-            }
-          }
-        };
-        const tmpModelsPath = tmpDir + "-models.json";
-        await writeFile(tmpModelsPath, JSON.stringify(modelsData));
-        modelRegistry = ModelRegistry.create(authStorage, tmpModelsPath);
-      } else {
-        modelRegistry = ModelRegistry.create(authStorage);
-      }
+    const modelRegistry = existsSync(localModelsPath)
+      ? ModelRegistry.create(authStorage, localModelsPath)
+      : ModelRegistry.create(authStorage);
+
+    // The `rei` agent. Provider + model are selected via env vars
+    // (MODEL_PROVIDER / AGENT_MODEL_PROVIDER / *_MODEL_AGENT), which main()
+    // populates by translating the CLI flags. `tmpDir` is the workspace; rei
+    // applies its edits directly to disk there, so the later `git diff` captures them.
+    agent = new Agent(createModelProvider(), tmpDir);
+    try {
+      await agent.connectMcp();
+    } catch (e) {
+      console.warn(`[WARN] MCP startup failed (continuing):`, e);
     }
-
-    let resolvedAgentModel;
-    if (agentModelReq) {
-      resolvedAgentModel = modelRegistry.find(agentModelReq.provider, agentModelReq.id);
-      if (!resolvedAgentModel) {
-        throw new Error(`Could not find model ${agentModelReq.provider}/${agentModelReq.id} in registry`);
-      }
-    } else {
-      const providerModels = modelRegistry.getAll().filter(m => m.provider === provider);
-      if (providerModels.length > 0) {
-        resolvedAgentModel = providerModels[0];
-        console.log(`[INFO] No agent model specified, defaulting to ${resolvedAgentModel.provider}/${resolvedAgentModel.id}`);
-      }
-    }
-
-    // Apply --context override to the resolved model (wins over models.json)
-    if (contextWindowOverride && resolvedAgentModel) {
-      resolvedAgentModel = { ...resolvedAgentModel, contextWindow: contextWindowOverride };
-      console.log(`[INFO] Context window overridden to ${contextWindowOverride} tokens`);
-    }
-
-    const { session } = await createAgentSession({
-      cwd: tmpDir,
-      sessionManager: SessionManager.inMemory(tmpDir),
-      authStorage,
-      modelRegistry,
-      model: resolvedAgentModel,
-    });
-
-    console.log(`[INFO] Agent resolved to model: ${session.model?.provider}/${session.model?.id}`);
-
-    let lastToolName = "";
-    let lastToolArgs = "";
-    let repeatedToolCount = 0;
-    let loopDetected = false;
-
-    session.subscribe((event) => {
-      if (event.type === "message_update" && event.assistantMessageEvent) {
-        if (event.assistantMessageEvent.type === "text_delta") {
-          process.stdout.write(event.assistantMessageEvent.delta);
-        } else if (event.assistantMessageEvent.type === "error") {
-          console.error(`\n[ERROR] Agent LLM Error:`, event.assistantMessageEvent.error);
-        }
-      } else if (event.type === "tool_execution_start") {
-        let argsStr = "";
-        try {
-          argsStr = JSON.stringify(event.args);
-
-          if (argsStr === lastToolArgs && event.toolName === lastToolName) {
-            repeatedToolCount++;
-          } else {
-            repeatedToolCount = 1;
-            lastToolName = event.toolName;
-            lastToolArgs = argsStr;
-          }
-
-          if (repeatedToolCount >= 3) {
-            console.warn(`\n[WARN] Loop detected! Tool ${event.toolName} called ${repeatedToolCount} times with same arguments.`);
-            loopDetected = true;
-            session.abort();
-          }
-
-          if (argsStr.length > 200) argsStr = argsStr.substring(0, 200) + "...";
-        } catch (e) { }
-        console.log(`\n[AGENT] Started using tool: ${event.toolName} with args: ${argsStr}`);
-      } else if (event.type === "tool_execution_end") {
-        console.log(`[AGENT] Finished tool: ${event.toolName}`);
-        if (event.result) {
-          try {
-            let resStr = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
-            if (resStr.length > 500) resStr = resStr.substring(0, 500) + "... [TRUNCATED]";
-            console.log(`[AGENT] Tool result: ${resStr}`);
-          } catch (e) { }
-        }
-      } else if (event.type === "auto_retry_start") {
-        console.warn(`\n[WARN] Agent retrying (${event.attempt}/${event.maxAttempts}): ${event.errorMessage}`);
-      }
-    });
+    // Agent mode is REQUIRED — only that mode runs the autonomous tool-calling
+    // loop that edits files. `ask`/`planning` would never touch the workspace.
+    const session: ChatSession = { messages: [], mode: "agent" };
+    console.log(`[INFO] Agent provider: ${process.env.AGENT_MODEL_PROVIDER || process.env.MODEL_PROVIDER}`);
 
     console.log(`\n--- Agent output ---`);
     const start = Date.now();
@@ -210,54 +133,38 @@ ${sweEnvInstruction}
 Issue Description:
 ${task.prompt}`;
     const timeoutMs = timeoutMin * 60 * 1000;
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("AGENT_TIMEOUT")), timeoutMs);
-    });
-
     let timedOut = false;
 
-    const runPromptWithLoopDetection = async (promptText: string) => {
-      let currentPrompt = promptText;
-      let maxLoops = 3;
-
-      while (!timedOut && maxLoops > 0) {
-        try {
-          await Promise.race([
-            session.prompt(currentPrompt),
-            timeoutPromise
-          ]);
-          if (loopDetected) throw new Error("LOOP_DETECTED");
-          break; // Finished successfully
-        } catch (err: any) {
-          if (err.message === "AGENT_TIMEOUT") {
-            console.error(`\n[ERROR] Agent execution timed out after ${timeoutMin} minutes. Aborting...`);
-            await session.abort();
-            timedOut = true;
-          } else if (loopDetected || err.message === "LOOP_DETECTED" || err.name === "AbortError" || err.message?.includes("abort")) {
-            console.log(`\n[INFO] Recovering from tool loop... Prompting agent to try something else.`);
-            currentPrompt = `SYSTEM WARNING: You are repeatedly calling the tool \`${lastToolName}\` with the exact same arguments: \`${lastToolArgs}\`. This is an infinite loop. The last execution was aborted. You MUST try a completely different approach, use different arguments, or implement the fix now.\n\n[Tool results are returned. If the result is sufficient, answer now.]`;
-            loopDetected = false;
-            repeatedToolCount = 0;
-            lastToolName = "";
-            lastToolArgs = "";
-            maxLoops--;
-          } else {
-            throw err;
-          }
+    // rei has no event bus and no external abort handle: one runTurn() IS the
+    // full autonomous run — its tool loop, loop-guards and self-verify are all
+    // internal. We only race it against a wall-clock timeout. Provider/connection
+    // failures throw out of runTurn; surface them as the same fatal error pi used.
+    const runPrompt = async (promptText: string): Promise<void> => {
+      if (timedOut) return;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("AGENT_TIMEOUT")), timeoutMs);
+      });
+      try {
+        const response = await Promise.race([
+          agent.runTurn(session, promptText),
+          timeoutPromise,
+        ]);
+        process.stdout.write((response as string) + "\n");
+      } catch (err: any) {
+        if (err?.message === "AGENT_TIMEOUT") {
+          console.error(`\n[ERROR] Agent execution timed out after ${timeoutMin} minutes.`);
+          timedOut = true;
+          return;
         }
+        const msg = err?.message || String(err);
+        if (/connection|fetch failed|socket|refused|lost|connect|timeout|timed out|500|502|503|504/i.test(msg)) {
+          throw new Error(`Inference backend is unreachable or crashed: ${msg}`);
+        }
+        throw err;
       }
     };
 
-    await runPromptWithLoopDetection(agentPrompt);
-
-    let lastAssistant = [...session.messages].reverse().find(m => m.role === "assistant") as any;
-    if (lastAssistant && lastAssistant.stopReason === "error") {
-      const errorMsg = lastAssistant.errorMessage || "Unknown error";
-      const isConnectionError = /connection|fetch failed|socket|refused|lost|connect|timeout|timed out|500|502|503|504/i.test(errorMsg);
-      if (isConnectionError) {
-        throw new Error(`Inference backend is unreachable or crashed: ${errorMsg}`);
-      }
-    }
+    await runPrompt(agentPrompt);
 
     const getDiff = async () => {
       await execAsync(`git add .`, { cwd: tmpDir });
@@ -272,28 +179,11 @@ ${task.prompt}`;
     console.log(`[INFO] Extracting diff...`);
     let diff = await getDiff();
 
-    if (!diff.trim() && !timedOut && (!lastAssistant || lastAssistant.stopReason !== "error")) {
+    if (!diff.trim() && !timedOut) {
       console.log(`\n[INFO] Agent finished with no changes. Prompting to continue...`);
       const reminderPrompt = `You are running as part of an automated pipeline, as such you MUST complete the task you have been assigned and fully implement it now by editing all the required files in the workspace, autonomously and without any further interaction.\n\nReminder of your task:\n${task.prompt}\n\n[Tool results are returned. If the result is sufficient, answer now.]`;
 
-      try {
-        await runPromptWithLoopDetection(reminderPrompt);
-      } catch (err: any) {
-        if (err.message === "AGENT_TIMEOUT") {
-          // Already handled in runPromptWithLoopDetection, but just in case
-        } else {
-          throw err;
-        }
-      }
-
-      lastAssistant = [...session.messages].reverse().find(m => m.role === "assistant") as any;
-      if (lastAssistant && lastAssistant.stopReason === "error") {
-        const errorMsg = lastAssistant.errorMessage || "Unknown error";
-        const isConnectionError = /connection|fetch failed|socket|refused|lost|connect|timeout|timed out|500|502|503|504/i.test(errorMsg);
-        if (isConnectionError) {
-          throw new Error(`Inference backend is unreachable or crashed: ${errorMsg}`);
-        }
-      }
+      await runPrompt(reminderPrompt);
 
       console.log(`[INFO] Re-extracting diff...`);
       diff = await getDiff();
@@ -324,41 +214,13 @@ ${task.prompt}`;
       return files.every((f) => CONFIG_ONLY_FILES.has(f));
     };
 
-    if (
-      diffHasOnlyConfigFiles(diff) &&
-      !timedOut &&
-      (!lastAssistant || lastAssistant.stopReason !== "error")
-    ) {
+    if (diffHasOnlyConfigFiles(diff) && !timedOut) {
       console.log(
         `\n[INFO] Agent only modified config/build files (no source code edits). Prompting to make actual changes...`
       );
       const configOnlyPrompt = `IMPORTANT: You have only modified build/configuration files (such as setup.py, tox.ini, pyproject.toml) but have NOT made any actual source code changes. These config file changes are likely environment artifacts and do NOT address the issue.\n\nYou MUST edit the actual source code files to fix the bug described in the task. Go back to investigating the issue and implement the fix in the relevant Python source files.\n\nReminder of your task:\n${task.prompt}`;
 
-      try {
-        await runPromptWithLoopDetection(configOnlyPrompt);
-      } catch (err: any) {
-        if (err.message === "AGENT_TIMEOUT") {
-          // handled
-        } else {
-          throw err;
-        }
-      }
-
-      lastAssistant = [...session.messages]
-        .reverse()
-        .find((m) => m.role === "assistant") as any;
-      if (lastAssistant && lastAssistant.stopReason === "error") {
-        const errorMsg = lastAssistant.errorMessage || "Unknown error";
-        const isConnectionError =
-          /connection|fetch failed|socket|refused|lost|connect|timeout|timed out|500|502|503|504/i.test(
-            errorMsg
-          );
-        if (isConnectionError) {
-          throw new Error(
-            `Inference backend is unreachable or crashed: ${errorMsg}`
-          );
-        }
-      }
+      await runPrompt(configOnlyPrompt);
 
       console.log(`[INFO] Re-extracting diff after config-only re-prompt...`);
       diff = await getDiff();
@@ -456,8 +318,10 @@ ${task.prompt}`;
     }
 
     console.log(`[INFO] Running LLM judge...`);
-    const judgeModel = judgeModelReq || session.state.model;
-    if (!judgeModel) throw new Error("Judge model not found");
+    // The judge is independent of the rei agent (Gemini via pi-ai). There is no
+    // agent-side fallback model anymore, so the judge flags are required.
+    const judgeModel = judgeModelReq;
+    if (!judgeModel) throw new Error("Judge model not found — pass --judge-provider <provider> --judge-model <model-id>");
     const auth = await modelRegistry.getApiKeyAndHeaders(judgeModel);
     if (!auth.ok) throw new Error("Judge auth failed: " + auth.error);
 
@@ -513,7 +377,15 @@ ${testResultsSection}
     const stream = streamSimple(judgeModel, {
       systemPrompt: judgeSystemPrompt,
       messages: [{ role: "user", content: judgePrompt, timestamp: Date.now() }]
-    }, { apiKey: auth.apiKey, headers: auth.headers });
+    }, {
+      apiKey: auth.apiKey,
+      headers: auth.headers,
+      // Some judge models (e.g. gemini-3.1-pro-preview on OpenRouter) MANDATE
+      // reasoning and 400 if it's disabled. Enable it; thinking arrives on its
+      // own chunk type, so `judgeOutput` (text_delta only) stays clean JSON.
+      // Harmlessly clamped for non-reasoning models.
+      reasoning: "low",
+    });
 
     for await (const chunk of stream) {
       if (chunk.type === "text_delta") {
@@ -570,6 +442,9 @@ ${testResultsSection}
     return result;
 
   } finally {
+    try {
+      await agent?.disposeMcp();
+    } catch { /* best-effort MCP teardown */ }
     if (!isSweContainer) {
       await rm(tmpDir, { recursive: true, force: true });
       console.log(`[INFO] Cleaned up ${tmpDir}`);
@@ -579,11 +454,51 @@ ${testResultsSection}
   }
 }
 
+/** TCP-probe an endpoint so we only init Laminar when its collector is actually up. */
+function canConnect(host: string, port: number, timeoutMs = 600): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const finish = (ok: boolean) => { socket.destroy(); resolve(ok); };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
+/**
+ * Init Laminar ONLY when a key is set AND the collector is reachable. Otherwise the
+ * OTLP exporter would flood ECONNREFUSED on every span. The Laminar server is optional
+ * for benchmarking, so a missing collector is a one-line warning, not a failure. When
+ * we skip init, rei's span helpers no-op (see isTelemetryEnabled in rei).
+ */
+async function setupTelemetry(): Promise<void> {
+  if (!process.env.LMNR_PROJECT_API_KEY) {
+    initTelemetry(); // logs "telemetry disabled" and no-ops
+    return;
+  }
+  const host = (process.env.LMNR_BASE_URL ?? "http://localhost")
+    .replace(/^https?:\/\//, "")
+    .replace(/[/:].*$/, "");
+  const port = Number(process.env.LMNR_GRPC_PORT ?? 8001);
+  if (await canConnect(host, port)) {
+    initTelemetry();
+    console.log(`[TELEMETRY] Laminar tracing enabled (${host}:${port}).`);
+  } else {
+    console.warn(`[TELEMETRY] Laminar not reachable at ${host}:${port} — tracing disabled for this run.`);
+  }
+}
+
 async function main() {
+  // Bootstrap Laminar before any Agent/span is created — only if its collector is up.
+  await setupTelemetry();
+
   const { values, positionals } = parseArgs({
     args: process.argv.slice(2),
     options: {
       model: { type: "string" },
+      "judge-provider": { type: "string" },
       "judge-model": { type: "string" },
       "model-tag": { type: "string" },
       timeout: { type: "string", default: "30" },
@@ -599,61 +514,59 @@ async function main() {
     allowPositionals: true,
   });
 
-  // --provider takes precedence, --engine is a backward-compat alias
-  const provider = (values.provider || values.engine || "llama.cpp") as string;
+  // rei picks provider/model from env vars; translate the CLI flags into them
+  // up-front, before any Agent is built. --provider wins, --engine is a legacy
+  // alias. Default: llmstudio (local, supports tool-calling).
+  const provider = (values.provider || values.engine || "llmstudio") as string;
+  process.env.MODEL_PROVIDER = provider;
+  process.env.AGENT_MODEL_PROVIDER = provider;
 
   const targetPath = positionals[0];
   if (!targetPath && !values["print-output-dir"]) {
-    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--provider llama.cpp|ds4|openrouter] [--model model-id] [--judge-model provider/model-id] [--model-tag tag] [--platform platform-id] [--rocm-version 7.2.4] [--port 8080] [--context tokens] [--inference-profile params]");
+    console.error("Usage: bun run src/index.ts <task-file-or-dir> [--provider openrouter|llmstudio|ollama|...] [--model model-id] [--judge-provider provider] [--judge-model model-id] [--model-tag tag] [--platform platform-id] [--rocm-version 7.2.4] [--port 8080] [--context tokens] [--inference-profile params]");
     process.exit(1);
   }
 
-  let agentModelReq;
+  // Map --model to the provider-specific *_MODEL_AGENT env var rei reads for
+  // agent mode (see resolveModelForMode in rei's provider-factory).
+  const AGENT_MODEL_ENV: Record<string, string> = {
+    openrouter: "OPENROUTER_MODEL_AGENT",
+    ollama: "OLLAMA_MODEL_AGENT",
+    groq: "GROQ_MODEL_AGENT",
+    gemini: "GEMINI_MODEL_AGENT",
+    huggingface: "HF_MODEL_AGENT",
+    llmstudio: "LLM_STUDIO_MODEL_AGENT",
+  };
   if (values.model) {
-    const modelVal = values.model;
-    // If --model contains a slash AND --provider is set, treat --model as just the model ID
-    // Otherwise, parse provider/model from --model (backward compat: --model openrouter/deepseek/deepseek-v4-flash)
-    if (modelVal.includes("/") && !values.provider) {
-      const parts = modelVal.split("/");
-      agentModelReq = { provider: parts[0] as any, id: parts.slice(1).join("/") };
-    } else {
-      // --model is just the model ID, use --provider for the provider
-      agentModelReq = { provider: provider as any, id: modelVal };
-    }
+    const envVar = AGENT_MODEL_ENV[provider];
+    if (envVar) process.env[envVar] = values.model as string;
+    else console.warn(`[WARN] Unknown provider "${provider}" — cannot map --model to an env var.`);
   }
 
+  // Judge model is independent of the agent (resolved via pi-ai). Provider and
+  // model are separate flags — mirroring the agent's --provider/--model — because
+  // model ids legitimately contain slashes (e.g. "google/gemini-3.1-pro-preview"),
+  // so packing both into one slash-delimited string is ambiguous. No default for
+  // --judge-provider: the judge backend often differs from the agent's (e.g. local
+  // agent, OpenRouter judge), so it must be stated explicitly.
   let judgeModelReq;
-  if (values["judge-model"]) {
-    const parts = values["judge-model"].split("/");
-    judgeModelReq = parts.length > 1 ? getModel(parts[0] as any, parts[1]) : undefined;
-    if (!judgeModelReq && !values["print-output-dir"]) console.warn(`[WARN] Could not resolve judge model ${values["judge-model"]}. Using default.`);
-  }
-
-  const modelTag = values["model-tag"] as string | undefined;
-  const isLocalProvider = provider === "llama.cpp" || provider === "ds4" || provider === "vllm";
-  let outputDir = "results";
-  let exactModelId = agentModelReq ? agentModelReq.id : "unknown";
-
-  if (isLocalProvider) {
-    try {
-      const fetchPort = values.port || (provider === "ds4" || provider === "vllm" ? "8000" : "8080");
-      const res = await fetch(`http://localhost:${fetchPort}/v1/models`);
-      const data = await res.json();
-      if (data && data.data && data.data.length > 0) {
-        exactModelId = data.data[0].id;
-        const quantName = exactModelId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        outputDir = `${quantName}_results`;
-      } else if (agentModelReq) {
-        outputDir = `${agentModelReq.id.replace(/\\\//g, "_")}_results`;
-      }
-    } catch (e) {
-      if (agentModelReq) {
-        outputDir = `${agentModelReq.id.replace(/\\\//g, "_")}_results`;
-      }
+  if (values["judge-model"] || values["judge-provider"]) {
+    if (!values["judge-provider"] || !values["judge-model"]) {
+      if (!values["print-output-dir"]) console.warn(`[WARN] Both --judge-provider and --judge-model are required.`);
+    } else {
+      judgeModelReq = getModel(values["judge-provider"] as any, values["judge-model"] as string);
+      if (!judgeModelReq && !values["print-output-dir"]) console.warn(`[WARN] Could not resolve judge model ${values["judge-provider"]}/${values["judge-model"]}.`);
     }
-  } else if (agentModelReq) {
-    outputDir = `${agentModelReq.id.replace(/\//g, "_")}_results`;
   }
+
+  // Results-dir naming: prefer the explicit --model, then the provider's default
+  // agent model from env, then a provider-tagged fallback.
+  const modelTag = values["model-tag"] as string | undefined;
+  const exactModelId =
+    (values.model as string) ||
+    process.env[AGENT_MODEL_ENV[provider] ?? ""] ||
+    `rei-${provider}`;
+  let outputDir = `${exactModelId.replace(/[^a-zA-Z0-9_-]/g, "_")}_results`;
 
   // Append model tag to directory name for filesystem uniqueness
   if (modelTag) {
@@ -691,6 +604,8 @@ async function main() {
   const timeoutMin = parseInt(values.timeout as string, 10) || 30;
   const contextWindowOverride = values.context ? parseInt(values.context as string, 10) : undefined;
   if (contextWindowOverride) {
+    // rei reads REI_CONTEXT_WINDOW for its token budget (model-runtime.ts).
+    process.env.REI_CONTEXT_WINDOW = String(contextWindowOverride);
     console.log(`[INFO] Context window override: ${contextWindowOverride} tokens`);
   }
 
@@ -735,7 +650,7 @@ async function main() {
       console.warn(`[WARN] Could not pre-parse task file ${f} for resume check.`);
     }
 
-    const res = await runTask(f, agentModelReq, judgeModelReq, outputDir, timeoutMin, provider, values.port as string, contextWindowOverride);
+    const res = await runTask(f, judgeModelReq, outputDir, timeoutMin);
     results.push(res);
     if (res.judgeScore === 1) passed++;
     totalDuration += res.durationMs;
@@ -759,10 +674,16 @@ async function main() {
   console.log(`======================================================\n`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  if (e instanceof Error && e.message.includes("Inference backend is unreachable")) {
-    process.exit(2);
-  }
-  process.exit(1);
-}).then(() => process.exit(0));
+main()
+  .then(async () => {
+    await shutdownTelemetry(); // flush spans before exit
+    process.exit(0);
+  })
+  .catch(async (e) => {
+    console.error(e);
+    await shutdownTelemetry();
+    if (e instanceof Error && e.message.includes("Inference backend is unreachable")) {
+      process.exit(2);
+    }
+    process.exit(1);
+  });

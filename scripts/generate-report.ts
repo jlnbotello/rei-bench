@@ -40,6 +40,12 @@ interface TaskAggregate {
   results: Record<string, TaskResult>;
 }
 
+// Base GitHub URL used to build "view transcript / view run" links in the report.
+// No default: set REPORT_REPO_URL to this fork's repo so the links resolve to the
+// result files committed here. When unset, those links are omitted entirely (rather
+// than pointing at a repo that doesn't have your results).
+const REPORT_REPO_URL = (process.env.REPORT_REPO_URL || "").replace(/\/+$/, "");
+
 async function safeReadFile(path: string): Promise<string | null> {
   try {
     return await readFile(path, "utf-8");
@@ -169,9 +175,9 @@ async function main() {
         const taskId = result.task;
         
         const transcriptName = `transcript-${taskId}.json`;
-        if (existsSync(join(target.dir, transcriptName))) {
+        if (REPORT_REPO_URL && existsSync(join(target.dir, transcriptName))) {
           const relativeDir = target.dir.substring(target.dir.indexOf("benchmark_results"));
-          result.transcriptUrl = `https://github.com/kyuz0/pi-bench/blob/main/${relativeDir}/${transcriptName}`.replace(/\\/g, "/");
+          result.transcriptUrl = `${REPORT_REPO_URL}/blob/main/${relativeDir}/${transcriptName}`.replace(/\\/g, "/");
         }
 
         if (!tasksMap[taskId]) {
@@ -185,7 +191,7 @@ async function main() {
 
     if (totalTasks > 0) {
       const relativeDir = target.dir.substring(target.dir.indexOf("benchmark_results"));
-      const runUrl = `https://github.com/kyuz0/pi-bench/tree/main/${relativeDir}`.replace(/\\/g, "/");
+      const runUrl = REPORT_REPO_URL ? `${REPORT_REPO_URL}/tree/main/${relativeDir}`.replace(/\\/g, "/") : "";
 
       models.push({
         id: modelUniqueId,

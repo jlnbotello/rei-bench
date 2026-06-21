@@ -1,33 +1,44 @@
 #!/bin/bash
 set -e
 
-# Run pi-bench tasks inside official SWE-bench evaluation containers.
+# Run rei-bench tasks inside official SWE-bench evaluation containers.
 # Each task runs in its own container with the correct Python version and dependencies.
 #
 # Usage:
-#   ./run-swe-bench.sh tasks/verified-mini/ --provider ds4 --judge-model google/gemini-3.1-pro-preview --platform strix-halo
+#   ./run-swe-bench.sh tasks/verified-mini/ --provider openrouter --judge-provider openrouter --judge-model google/gemini-3.1-pro-preview --platform strix-halo
 #   ./run-swe-bench.sh tasks/verified-mini/django__django-12209.json --provider openrouter --model deepseek/deepseek-v4-flash
 #
 # The script:
 #   1. Iterates over task files in the given directory (or runs a single task file)
 #   2. For each task, launches the corresponding SWE-bench container
-#   3. Installs bun + pi-bench deps inside the container (cached via Docker volume)
+#   3. Installs bun + rei-bench deps inside the container (cached via Docker volume)
 #   4. Runs the benchmark: agent works in /testbed, then FAIL_TO_PASS tests are executed
-#   5. Results are written back to the host via the bind-mounted pi-bench directory
+#   5. Results are written back to the host via the bind-mounted rei-bench directory
 
 TARGET="${1:?Usage: ./run-swe-bench.sh <task-file-or-dir> [extra-args...]}"
 shift
 EXTRA_ARGS="$@"
 REGISTRY="ghcr.io/epoch-research/swe-bench.eval.x86_64"
-PI_BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REI_BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# rei-bench deep-imports the rei agent from ../rei/dist (+ rei's node_modules).
+# That sibling repo lives outside /rei-bench, so it must be bind-mounted into the
+# container at /rei for `../../rei/...` (resolved from /rei-bench/src) to exist.
+# Override REI_DIR to point elsewhere if rei is not a sibling of rei-bench.
+REI_DIR="${REI_DIR:-$(cd "$REI_BENCH_DIR/../rei" 2>/dev/null && pwd)}"
+if [ -z "$REI_DIR" ] || [ ! -f "$REI_DIR/dist/core/agent.js" ]; then
+  echo "[ERROR] rei build not found. Expected $REI_BENCH_DIR/../rei/dist (run 'npm run build' in rei),"
+  echo "        or set REI_DIR to the rei repo path."
+  exit 1
+fi
 
 # Create persistent bun cache volume (shared across all container runs)
-docker volume create pi-bench-bun-cache 2>/dev/null || true
+docker volume create rei-bench-bun-cache 2>/dev/null || true
 
 # Collect env file args
 ENV_ARGS=""
-if [ -f "$PI_BENCH_DIR/.env" ]; then
-  ENV_ARGS="--env-file $PI_BENCH_DIR/.env"
+if [ -f "$REI_BENCH_DIR/.env" ]; then
+  ENV_ARGS="--env-file $REI_BENCH_DIR/.env"
 fi
 
 # Collect task files
@@ -83,13 +94,14 @@ for task_file in "${TASK_FILES[@]}"; do
   echo "         Image: $IMAGE"
   echo "========================================================"
 
-  REL_TASK_FILE=$(python3 -c "import os; print(os.path.relpath('$(realpath "$task_file")', '$(realpath "$PI_BENCH_DIR")'))")
+  REL_TASK_FILE=$(python3 -c "import os; print(os.path.relpath('$(realpath "$task_file")', '$(realpath "$REI_BENCH_DIR")'))")
 
   # Run container and tee output to a temp file so we can extract the results dir
-  LOGFILE=$(mktemp /tmp/pi-bench-log.XXXXXX)
+  LOGFILE=$(mktemp /tmp/rei-bench-log.XXXXXX)
   docker run --init -it --rm --network host $ENV_ARGS \
-    -v "$PI_BENCH_DIR:/pi-bench:z" \
-    -v "pi-bench-bun-cache:/root/.bun" \
+    -v "$REI_BENCH_DIR:/rei-bench:z" \
+    -v "$REI_DIR:/rei:z" \
+    -v "rei-bench-bun-cache:/root/.bun" \
     "$IMAGE" \
     bash -c "
       set -e
@@ -106,8 +118,8 @@ for task_file in "${TASK_FILES[@]}"; do
       # Ensure unzip is available (bun cache might exist from a previous run but unzip might not be in this container)
       which unzip >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq unzip >/dev/null 2>&1; }
 
-      # Install pi-bench dependencies (fast if node_modules exists from bind mount)
-      cd /pi-bench && bun install --frozen-lockfile 2>/dev/null || bun install 2>/dev/null
+      # Install rei-bench dependencies (fast if node_modules exists from bind mount)
+      cd /rei-bench && bun install --frozen-lockfile 2>/dev/null || bun install 2>/dev/null
 
       # Activate the SWE-bench testbed conda environment so 'python' resolves
       # to the correct version (e.g. Python 3.6 for Django, 3.8+ for Sphinx)

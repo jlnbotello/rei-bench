@@ -14,10 +14,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up git config to avoid warnings when agent tries to commit/diff
-RUN git config --global user.email "bench@pi.local" && \
-    git config --global user.name "Pi Benchmarker"
+RUN git config --global user.email "bench@rei.local" && \
+    git config --global user.name "rei Benchmarker"
 
-WORKDIR /pi-bench
+WORKDIR /rei-bench
 
 # Fast appended layer to prevent busting the heavy cache above
 RUN apt-get update && apt-get install -y python3-setuptools && rm -rf /var/lib/apt/lists/*
