@@ -137,8 +137,22 @@ ${task.prompt}`;
 
     // rei has no event bus and no external abort handle: one runTurn() IS the
     // full autonomous run — its tool loop, loop-guards and self-verify are all
-    // internal. We only race it against a wall-clock timeout. Provider/connection
-    // failures throw out of runTurn; surface them as the same fatal error pi used.
+    // internal. We only race it against a wall-clock timeout.
+    //
+    // Error policy mirrors pi-bench's intent: a timeout is a PER-TASK outcome, NOT a
+    // dead backend, and must never abort the whole suite. The old port classified any
+    // error message containing "timeout"/"timed out" as "Inference backend is
+    // unreachable" and rethrew it — which `main()` turns into a process.exit, killing
+    // every remaining task (and skipping result-saving) on a single transient stall,
+    // even when the agent had already fixed the bug. Now:
+    //   - timeout-shaped errors (our wall-clock guard OR a transient provider/request
+    //     timeout thrown out of rei) → mark the task timed out, score what's on disk,
+    //     and let the suite continue;
+    //   - only a genuine, unrecoverable connection failure stays fatal;
+    //   - any other agent error fails THIS turn but is still non-fatal — we score what
+    //     exists rather than nuking the run.
+    // `timedOut` here just means "stop prompting and go score"; it's never written into
+    // the saved result, so reusing it for the generic-error path is safe.
     const runPrompt = async (promptText: string): Promise<void> => {
       if (timedOut) return;
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -151,33 +165,71 @@ ${task.prompt}`;
         ]);
         process.stdout.write((response as string) + "\n");
       } catch (err: any) {
-        if (err?.message === "AGENT_TIMEOUT") {
-          console.error(`\n[ERROR] Agent execution timed out after ${timeoutMin} minutes.`);
+        const msg = err?.message || String(err);
+        // Timeout-shaped → non-fatal, per task. Checked FIRST so e.g. "connection
+        // timed out" is treated as a timeout, not as a dead backend.
+        if (err?.message === "AGENT_TIMEOUT" || /\btimed?\s*out\b|ETIMEDOUT|operation timed out/i.test(msg)) {
+          console.error(`\n[ERROR] Agent turn timed out (${timeoutMin}-min wall-clock or a provider/request timeout): ${msg}`);
           timedOut = true;
           return;
         }
-        const msg = err?.message || String(err);
-        if (/connection|fetch failed|socket|refused|lost|connect|timeout|timed out|500|502|503|504/i.test(msg)) {
+        // Genuine, unrecoverable backend death → fatal; the whole run can't proceed.
+        if (/ECONNREFUSED|ECONNRESET|fetch failed|socket hang up|connection refused|network error|\b50[234]\b/i.test(msg)) {
           throw new Error(`Inference backend is unreachable or crashed: ${msg}`);
         }
-        throw err;
+        // Any other agent error: fail this turn but keep the run alive and score what
+        // exists, so one bad task doesn't abort the suite.
+        console.error(`\n[ERROR] Agent turn failed (continuing to score what exists): ${msg}`);
+        timedOut = true;
+        return;
       }
     };
 
     await runPrompt(agentPrompt);
 
+    // Capture ONLY the agent's source changes. Two failure modes this guards against:
+    //  1. rei writes its own artifacts under .rei/ (logs + a multi-MB rag-index.json of
+    //     RAG embeddings). Staging+diffing those (a) pollutes the diff the judge sees and
+    //     we persist, and (b) overflows Node's DEFAULT 1 MB execAsync stdout buffer, which
+    //     made `git diff --cached` REJECT → caught → "" → the bogus "Agent finished with
+    //     no changes" even when the source file was correctly edited. Exclude .rei.
+    //  2. A legitimately large *source* diff can still exceed 1 MB → raise maxBuffer.
+    const EXCLUDE_REI = `'.' ':(exclude).rei'`;
+    const GIT_OPTS = { cwd: tmpDir, maxBuffer: 256 * 1024 * 1024 };
     const getDiff = async () => {
-      await execAsync(`git add .`, { cwd: tmpDir });
+      try { await execAsync(`git add -A -- ${EXCLUDE_REI}`, GIT_OPTS); } catch { /* non-fatal */ }
       try {
-        const { stdout } = await execAsync(`git diff --cached`, { cwd: tmpDir });
+        const { stdout } = await execAsync(`git diff --cached -- ${EXCLUDE_REI}`, GIT_OPTS);
         return stdout;
       } catch (e) {
         return "";
       }
     };
 
+    // DIAGNOSTIC (opt-in via REI_BENCH_DEBUG): when the staged diff comes back empty even
+    // though the agent reported edits, dump git's actual view so we can see WHY the change
+    // isn't recognized (assume-unchanged bits, a stray lock, a nested .git, an errored
+    // `git add`, an execAsync buffer overflow, etc.). Off by default to keep logs clean.
+    const debugEnabled = !!process.env.REI_BENCH_DEBUG;
+    const dumpGitState = async (label: string) => {
+      const run = async (cmd: string) => {
+        try { return (await execAsync(cmd, GIT_OPTS)).stdout.trim(); }
+        catch (e: any) { return `<err: ${e?.stderr || e?.message || e}>`; }
+      };
+      console.log(`\n----- GIT DIAGNOSTIC (${label}) @ ${tmpDir} -----`);
+      console.log(`[git] HEAD            : ${await run("git rev-parse --short HEAD")}`);
+      console.log(`[git] status --porcelain (top 20):\n${(await run("git status --porcelain")).split("\n").slice(0, 20).join("\n")}`);
+      console.log(`[git] diff (unstaged) bytes: ${(await run("git diff")).length}`);
+      console.log(`[git] diff --cached bytes  : ${(await run("git diff --cached")).length}`);
+      console.log(`[git] diff HEAD bytes      : ${(await run("git diff HEAD")).length}`);
+      console.log(`[git] assume-unchanged/skip-worktree files: ${(await run("git ls-files -v")).split("\n").filter((l) => /^[a-z]|^S/.test(l)).slice(0, 10).join(", ") || "(none)"}`);
+      console.log(`[git] index.lock present    : ${existsSync(join(tmpDir, ".git", "index.lock"))}`);
+      console.log(`----- END GIT DIAGNOSTIC -----\n`);
+    };
+
     console.log(`[INFO] Extracting diff...`);
     let diff = await getDiff();
+    if (!diff.trim() && debugEnabled) await dumpGitState("after first getDiff — empty");
 
     if (!diff.trim() && !timedOut) {
       console.log(`\n[INFO] Agent finished with no changes. Prompting to continue...`);
