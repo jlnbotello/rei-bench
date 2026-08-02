@@ -27,6 +27,25 @@ import * as net from "node:net";
 
 const execAsync = promisify(exec);
 
+// LM Studio reports the GGUF quantization for a loaded/downloaded model via its
+// native REST API (distinct from the OpenAI-compatible /v1 surface rei talks
+// to). Used to auto-tag exactModelId with the quant string for the dashboard.
+async function fetchLmStudioQuant(modelKey: string): Promise<string | null> {
+  const base = (process.env.LLM_STUDIO_BASE_URL ?? "http://localhost:1234/v1").replace(/\/v1\/?$/, "");
+  try {
+    const res = await fetch(`${base}/api/v1/models`, {
+      headers: { Authorization: `Bearer ${process.env.LLM_STUDIO_API_KEY ?? "lm-studio"}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const match = (data.models ?? []).find((m: any) => m.key === modelKey);
+    return match?.quantization?.name ?? null;
+  } catch (e) {
+    console.warn(`[WARN] Could not fetch quantization info from LM Studio: ${(e as Error).message}`);
+    return null;
+  }
+}
+
 // SWE-bench container test command builder
 function buildSweTestCommand(task: any): string {
   const python = "/opt/miniconda3/envs/testbed/bin/python";
@@ -614,10 +633,19 @@ async function main() {
   // Results-dir naming: prefer the explicit --model, then the provider's default
   // agent model from env, then a provider-tagged fallback.
   const modelTag = values["model-tag"] as string | undefined;
-  const exactModelId =
+  let exactModelId =
     (values.model as string) ||
     process.env[AGENT_MODEL_ENV[provider] ?? ""] ||
     `rei-${provider}`;
+
+  // LM Studio knows its own quantization (GGUF quant string), but --model is
+  // just the model key. Look it up via LM Studio's native REST API so the
+  // dashboard's parseModelName() can split base/quant without the user having
+  // to hand-encode the quant suffix into --model.
+  if (provider === "llmstudio") {
+    const quant = await fetchLmStudioQuant(exactModelId);
+    if (quant) exactModelId = `${exactModelId}-${quant}`;
+  }
   let outputDir = `${exactModelId.replace(/[^a-zA-Z0-9_-]/g, "_")}_results`;
 
   // Append model tag to directory name for filesystem uniqueness
