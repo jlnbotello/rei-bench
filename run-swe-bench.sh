@@ -76,8 +76,10 @@ COUNT=0
 PASSED=0
 FAILED=0
 
-# Determine results directory on the host to check for cached results
-RESULTS_DIR=$(bun run src/index.ts --print-output-dir "$TARGET" $EXTRA_ARGS 2>/dev/null || true)
+# Determine results directory on the host to check for cached results.
+# --print-output-dir emits the path last, but banners (e.g. the telemetry notice)
+# may precede it on stdout, so keep only the final line.
+RESULTS_DIR=$(bun run src/index.ts --print-output-dir "$TARGET" $EXTRA_ARGS 2>/dev/null | tail -1 | tr -d '\r' || true)
 
 echo "========================================================"
 echo "[INFO] SWE-bench Runner — $TOTAL tasks queued"
@@ -213,8 +215,16 @@ if attempts:
         shutil.copy2(best_trans, final_trans)
 " "$RESULTS_DIR" "$TASK_ID" "$PASS_COUNT"
 
-  # Count passes/fails based on the final combined file
-  FINAL_SCORE=$(python3 -c "import json, sys; r=json.load(open(sys.argv[1], 'r')); print(r.get('judgeScore', 0))" "$RESULTS_DIR/results-${TASK_ID}.json" 2>/dev/null || echo "0")
+  # Count passes/fails based on the final combined file. If the results file cannot
+  # be read (e.g. the results dir could not be determined), fall back to the
+  # container exit code rather than silently reporting every task as failed.
+  if [ -n "$RESULTS_DIR" ] && [ -f "$RESULTS_DIR/results-${TASK_ID}.json" ]; then
+    FINAL_SCORE=$(python3 -c "import json, sys; r=json.load(open(sys.argv[1], 'r')); print(r.get('judgeScore', 0))" "$RESULTS_DIR/results-${TASK_ID}.json" 2>/dev/null || echo "0")
+  else
+    echo "[WARN] No results file for $TASK_ID under '${RESULTS_DIR:-<unknown>}'; falling back to exit code."
+    [ $EXIT_CODE -eq 0 ] && FINAL_SCORE=1 || FINAL_SCORE=0
+  fi
+
   if [ "$FINAL_SCORE" = "1" ]; then
     PASSED=$((PASSED + 1))
   else
