@@ -18,6 +18,30 @@ import type { ChatSession } from "../../rei/dist/chat/types.js";
 import { initTelemetry, shutdownTelemetry } from "../../rei/dist/telemetry/init.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+
+/**
+ * Runs one full agent turn and returns its complete text.
+ *
+ * rei used to expose `runTurn(session, input): Promise<string>`; commit 786a2c1 ("unify agent
+ * execution") removed it, leaving only the streaming `streamTurn`, which yields chunks. This
+ * collects them back into the single string the harness has always scored, so the agent's
+ * behaviour — its tool loop, guards and self-verify are all internal to one turn — is unchanged.
+ *
+ * The turn is NOT abortable: the caller races this against a wall-clock timeout, and on timeout the
+ * generator keeps running to completion in the background. That was equally true of `runTurn`, so
+ * the timeout semantics are preserved rather than newly introduced here.
+ */
+async function runTurn(
+  agent: any,
+  session: ChatSession,
+  promptText: string,
+): Promise<string> {
+  const chunks: string[] = [];
+  for await (const chunk of agent.streamTurn(session, promptText)) {
+    chunks.push(chunk as string);
+  }
+  return chunks.join("");
+}
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -179,7 +203,7 @@ ${task.prompt}`;
       });
       try {
         const response = await Promise.race([
-          agent.runTurn(session, promptText),
+          runTurn(agent, session, promptText),
           timeoutPromise,
         ]);
         process.stdout.write((response as string) + "\n");
