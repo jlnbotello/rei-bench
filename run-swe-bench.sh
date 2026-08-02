@@ -36,6 +36,11 @@ done
 REGISTRY="ghcr.io/epoch-research/swe-bench.eval.x86_64"
 REI_BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Containers run as root; results written through the bind mount must be handed
+# back to the invoking user so host-side post-processing can write to them.
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
+
 # rei-bench deep-imports the rei agent from ../rei/dist (+ rei's node_modules).
 # That sibling repo lives outside /rei-bench, so it must be bind-mounted into the
 # container at /rei for `../../rei/...` (resolved from /rei-bench/src) to exist.
@@ -149,7 +154,17 @@ for task_file in "${TASK_FILES[@]}"; do
         conda activate testbed
 
         # Run the benchmark
-        bun run src/index.ts $REL_TASK_FILE $EXTRA_ARGS
+        RC=0
+        bun run src/index.ts $REL_TASK_FILE $EXTRA_ARGS || RC=\$?
+
+        # The container runs as root, so everything it writes into the bind-mounted
+        # results dir lands root-owned and the host-side steps below (attempt renames,
+        # combine, aggregate summary) cannot touch it. Hand ownership back.
+        if [ -n '$RESULTS_DIR' ] && [ -d '/rei-bench/$RESULTS_DIR' ]; then
+          chown -R $HOST_UID:$HOST_GID '/rei-bench/$RESULTS_DIR' 2>/dev/null || true
+        fi
+
+        exit \$RC
       " 2>&1 | tee "$LOGFILE"
 
     EXIT_CODE=${PIPESTATUS[0]}
@@ -215,14 +230,15 @@ if attempts:
         shutil.copy2(best_trans, final_trans)
 " "$RESULTS_DIR" "$TASK_ID" "$PASS_COUNT"
 
-  # Count passes/fails based on the final combined file. If the results file cannot
-  # be read (e.g. the results dir could not be determined), fall back to the
-  # container exit code rather than silently reporting every task as failed.
+  # Count passes/fails based on the final combined file. Exit code 0 only means the
+  # harness completed, not that the judge scored it a pass, so if the results file
+  # can't be read (e.g. the results dir could not be determined), fail closed rather
+  # than trusting the exit code.
   if [ -n "$RESULTS_DIR" ] && [ -f "$RESULTS_DIR/results-${TASK_ID}.json" ]; then
     FINAL_SCORE=$(python3 -c "import json, sys; r=json.load(open(sys.argv[1], 'r')); print(r.get('judgeScore', 0))" "$RESULTS_DIR/results-${TASK_ID}.json" 2>/dev/null || echo "0")
   else
-    echo "[WARN] No results file for $TASK_ID under '${RESULTS_DIR:-<unknown>}'; falling back to exit code."
-    [ $EXIT_CODE -eq 0 ] && FINAL_SCORE=1 || FINAL_SCORE=0
+    echo "[WARN] No results file for $TASK_ID under '${RESULTS_DIR:-<unknown>}'; counting as failed."
+    FINAL_SCORE=0
   fi
 
   if [ "$FINAL_SCORE" = "1" ]; then
@@ -248,7 +264,12 @@ if [ -n "$RESULTS_DIR" ] && [ -d "$RESULTS_DIR" ]; then
 import json, glob, os, sys
 
 results_dir = sys.argv[1]
-result_files = sorted(glob.glob(os.path.join(results_dir, 'results-*.json')))
+# Per-attempt files (results-<task>-attemptN.json) are folded into the canonical
+# results-<task>.json by the combine step, so exclude them from the aggregate.
+result_files = sorted(
+    f for f in glob.glob(os.path.join(results_dir, 'results-*.json'))
+    if '-attempt' not in os.path.basename(f)
+)
 
 if not result_files:
     print('[WARN] No result files found, skipping summary generation.')
@@ -276,12 +297,16 @@ summary = {
 }
 
 summary_path = os.path.join(results_dir, 'summary.json')
-with open(summary_path, 'w') as fh:
-    json.dump(summary, fh, indent=2)
+try:
+    with open(summary_path, 'w') as fh:
+        json.dump(summary, fh, indent=2)
+except OSError as e:
+    print(f'[WARN] Could not write {summary_path}: {e}')
+    sys.exit(0)
 
 print(f'[INFO] Aggregate summary: {passed}/{len(results)} passed ({summary[\"passRate\"]*100:.1f}%)')
 print(f'[INFO] Summary saved to {summary_path}')
-" "$RESULTS_DIR"
+" "$RESULTS_DIR" || echo "[WARN] Aggregate summary generation failed; individual results are unaffected."
 else
   echo "[WARN] Could not determine results directory for aggregate summary."
 fi
