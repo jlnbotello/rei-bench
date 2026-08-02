@@ -191,6 +191,7 @@ The judge call enables `reasoning: "low"`, so reasoning-mandatory judge models
 | `--rocm-version <ver>`| ROCm version running the backend | `7.2.4` |
 | `--context <tokens>` | Override rei's context window (`REI_CONTEXT_WINDOW`) | rei default |
 | `--timeout <minutes>` | Agent timeout per task | `30` |
+| `--pass <N>` | Number of attempts per task, retrying on failure (`run-swe-bench.sh` only) | `1` |
 
 ### Examples
 
@@ -232,7 +233,19 @@ The judge call enables `reasoning: "low"`, so reasoning-mandatory judge models
   --platform strix-halo \
   --context 90000 \
   --timeout 45
+
+# Run with 2 attempts per task (pass@2) — a task retries only if the first attempt fails
+./run-swe-bench.sh tasks/verified-mini/ \
+  --provider llmstudio --model qwen/qwen3.6-35b-a3b \
+  --judge-provider openrouter --judge-model google/gemini-2.5-flash \
+  --platform strix-halo \
+  --pass 2 \
+  --timeout 45
 ```
+
+Each attempt is written as `results-<task>-attempt<N>.json` / `transcript-<task>-attempt<N>.json`, then
+combined into the canonical `results-<task>.json` with an `attempts[]` array and `succeededAtAttempt`.
+The report UI renders that history in the task modal.
 
 ---
 
