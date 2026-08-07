@@ -7,6 +7,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TASK_DIR="${SCRIPT_DIR}/../tasks/verified-mini"
+# These containers are published for linux/amd64 only (no arm64 manifest exists), so
+# --platform is passed explicitly to `docker pull` below. No-op on x86_64 hosts; on
+# Apple Silicon (or arm64 Linux) it pulls the amd64 image for emulated execution,
+# matching what run-swe-bench.sh runs.
 REGISTRY="ghcr.io/epoch-research/swe-bench.eval.x86_64"
 
 if [ ! -d "$TASK_DIR" ]; then
@@ -24,7 +28,7 @@ for task_file in "$TASK_DIR"/*.json; do
   IMAGE="${REGISTRY}.${TASK_ID}:latest"
 
   echo "[$COUNT/$TOTAL] Pulling $IMAGE ..."
-  docker pull "$IMAGE" 2>&1 | tail -1
+  docker pull --platform linux/amd64 "$IMAGE" 2>&1 | tail -1
 done
 
 echo ""

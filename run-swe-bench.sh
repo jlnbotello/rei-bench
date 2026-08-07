@@ -33,6 +33,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+# These containers are published for linux/amd64 only (no arm64 manifest exists), so
+# --platform is passed explicitly below. On x86_64 hosts it's a no-op; on Apple Silicon
+# (or arm64 Linux) Docker runs them emulated (QEMU, or Rosetta if enabled in Docker
+# Desktop's settings for much better performance) instead of erroring on a platform
+# mismatch.
 REGISTRY="ghcr.io/epoch-research/swe-bench.eval.x86_64"
 REI_BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -60,6 +65,20 @@ ENV_ARGS=""
 if [ -f "$REI_BENCH_DIR/.env" ]; then
   ENV_ARGS="--env-file $REI_BENCH_DIR/.env"
 fi
+
+# Local providers (llmstudio, ollama) default to http://localhost:<port>, which from
+# inside a container never reaches the host. We don't rely on --network host (Linux-only;
+# unsupported/beta on Docker Desktop for Mac) — instead the container gets
+# --add-host=host.docker.internal:host-gateway below, and here we point the local
+# providers' base URL at that hostname. Only injected when the user hasn't already set
+# a custom value (shell env or .env), so an explicit remote endpoint is never clobbered.
+default_local_provider_env() {
+  local var="$1" default="$2"
+  if [ -n "${!var:-}" ]; then return; fi
+  if [ -f "$REI_BENCH_DIR/.env" ] && grep -qE "^${var}=.+" "$REI_BENCH_DIR/.env"; then return; fi
+  echo "-e ${var}=${default}"
+}
+LOCAL_PROVIDER_ENV_ARGS="$(default_local_provider_env LLM_STUDIO_BASE_URL 'http://host.docker.internal:1234/v1') $(default_local_provider_env OLLAMA_BASE_URL 'http://host.docker.internal:11434')"
 
 # Collect task files
 TASK_FILES=()
@@ -125,7 +144,9 @@ for task_file in "${TASK_FILES[@]}"; do
 
     # Run container and tee output to a temp file so we can extract the results dir
     LOGFILE=$(mktemp /tmp/rei-bench-log.XXXXXX)
-    docker run --init -it --rm --network host $ENV_ARGS \
+    docker run --init -it --rm --platform linux/amd64 \
+      --add-host=host.docker.internal:host-gateway \
+      $ENV_ARGS $LOCAL_PROVIDER_ENV_ARGS \
       -v "$REI_BENCH_DIR:/rei-bench:z" \
       -v "$REI_DIR:/rei:z" \
       -v "rei-bench-bun-cache:/root/.bun" \

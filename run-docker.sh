@@ -28,7 +28,23 @@ if [ -f "$REI_BENCH_DIR/.env" ]; then
     ENV_ARGS="--env-file $REI_BENCH_DIR/.env"
 fi
 
-docker run --init --rm -it --network host $ENV_ARGS \
+# Local providers (llmstudio, ollama) default to http://localhost:<port>, which from
+# inside a container never reaches the host. We don't rely on --network host (Linux-only;
+# unsupported/beta on Docker Desktop for Mac) — instead the container gets
+# --add-host=host.docker.internal:host-gateway below, and here we point the local
+# providers' base URL at that hostname. Only injected when the user hasn't already set
+# a custom value (shell env or .env), so an explicit remote endpoint is never clobbered.
+default_local_provider_env() {
+    local var="$1" default="$2"
+    if [ -n "${!var:-}" ]; then return; fi
+    if [ -f "$REI_BENCH_DIR/.env" ] && grep -qE "^${var}=.+" "$REI_BENCH_DIR/.env"; then return; fi
+    echo "-e ${var}=${default}"
+}
+LOCAL_PROVIDER_ENV_ARGS="$(default_local_provider_env LLM_STUDIO_BASE_URL 'http://host.docker.internal:1234/v1') $(default_local_provider_env OLLAMA_BASE_URL 'http://host.docker.internal:11434')"
+
+docker run --init --rm -it \
+    --add-host=host.docker.internal:host-gateway \
+    $ENV_ARGS $LOCAL_PROVIDER_ENV_ARGS \
     -v "$REI_BENCH_DIR:/rei-bench:z" \
     -v "$REI_DIR:/rei:z" \
     -w /rei-bench \

@@ -95,8 +95,31 @@ Unlike pi-bench, there is no `models.json` and no `/v1/models` auto-detection �
 > container at `/rei` (so `rei-bench`'s deep import of `../../rei/dist` resolves there).
 > **You must build `rei` first** (`npm run build` in the `rei` repo); the runner checks for
 > `rei/dist` and aborts otherwise. If `rei` is not a sibling of `rei-bench`, set `REI_DIR`
-> to its path. Because the runner uses `--network host`, **local** providers (`llmstudio`,
-> `ollama`) running on the host are reachable from inside the container.
+> to its path. **Local** providers (`llmstudio`, `ollama`) running on the host are reachable
+> from inside the container via `host.docker.internal` (see [Apple Silicon / macOS](#apple-silicon--macos)
+> below for how this is wired up) — no manual port-forwarding needed.
+
+### Apple Silicon / macOS
+
+The SWE-bench containers are published for `linux/amd64` only (no arm64 image exists), so
+both `run-swe-bench.sh` and `scripts/pull-swe-containers.sh` pass `--platform linux/amd64`
+explicitly — on Apple Silicon this runs them emulated. **Enable "Use Rosetta for
+x86/amd64 emulation on Apple Silicon"** in Docker Desktop → Settings → General for a large
+speedup over plain QEMU emulation. `run-docker.sh` (curated tasks) is not pinned to a
+platform, so its image builds natively for the host architecture.
+
+Reaching local model servers (LM Studio, Ollama) running on the Mac host used to require
+`--network host`, which is Linux-only (unsupported/beta on Docker Desktop for Mac/Windows).
+Both Docker runners now instead add `--add-host=host.docker.internal:host-gateway` to the
+container and — **only if you haven't already set a custom value** in `.env` or your shell —
+default `LLM_STUDIO_BASE_URL` / `OLLAMA_BASE_URL` to `http://host.docker.internal:<port>`.
+This works identically on macOS, Windows, and Linux, so no `.env` changes are needed to run
+local models through the Docker runners on any platform.
+
+If you also run a local Laminar collector for telemetry, point `LMNR_BASE_URL` at
+`http://host.docker.internal` too (its default of `http://localhost` no longer reaches the
+host now that `--network host` isn't used) — telemetry is best-effort and silently disables
+itself if unreachable, so this is optional.
 
 **Example: local LM Studio**
 ```bash
