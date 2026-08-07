@@ -108,18 +108,22 @@ x86/amd64 emulation on Apple Silicon"** in Docker Desktop → Settings → Gener
 speedup over plain QEMU emulation. `run-docker.sh` (curated tasks) is not pinned to a
 platform, so its image builds natively for the host architecture.
 
-Reaching local model servers (LM Studio, Ollama) running on the Mac host used to require
-`--network host`, which is Linux-only (unsupported/beta on Docker Desktop for Mac/Windows).
-Both Docker runners now instead add `--add-host=host.docker.internal:host-gateway` to the
-container and — **only if you haven't already set a custom value** in `.env` or your shell —
-default `LLM_STUDIO_BASE_URL` / `OLLAMA_BASE_URL` to `http://host.docker.internal:<port>`.
-This works identically on macOS, Windows, and Linux, so no `.env` changes are needed to run
-local models through the Docker runners on any platform.
+Reaching local model servers (LM Studio, Ollama) running on the host still uses
+`--network host` on Linux — unchanged, zero config, and it's the only mode that reliably
+reaches loopback-only servers there (LM Studio and Ollama both default to binding
+`127.0.0.1` only, not `0.0.0.0`; verified with `ss -tln`). `--network host` is
+unsupported/beta on Docker Desktop for Mac, so on macOS both Docker runners instead add
+`--add-host=host.docker.internal:host-gateway` and — **only if you haven't already set a
+custom value** in `.env` or your shell — default `LLM_STUDIO_BASE_URL` / `OLLAMA_BASE_URL`
+to `http://host.docker.internal:<port>`. Docker Desktop proxies `host.docker.internal`
+through to the Mac's own `127.0.0.1`, so loopback-bound LM Studio/Ollama stay reachable
+there too without reconfiguring them. (This OS branch is automatic — `uname -s` is checked
+at script startup — so there's nothing to configure either way.)
 
-If you also run a local Laminar collector for telemetry, point `LMNR_BASE_URL` at
-`http://host.docker.internal` too (its default of `http://localhost` no longer reaches the
-host now that `--network host` isn't used) — telemetry is best-effort and silently disables
-itself if unreachable, so this is optional.
+If you also run a local Laminar collector for telemetry on macOS, point `LMNR_BASE_URL` at
+`http://host.docker.internal` (its default of `http://localhost` won't reach the host under
+the macOS network mode above) — telemetry is best-effort and silently disables itself if
+unreachable, so this is optional.
 
 **Example: local LM Studio**
 ```bash

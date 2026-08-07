@@ -66,19 +66,29 @@ if [ -f "$REI_BENCH_DIR/.env" ]; then
   ENV_ARGS="--env-file $REI_BENCH_DIR/.env"
 fi
 
-# Local providers (llmstudio, ollama) default to http://localhost:<port>, which from
-# inside a container never reaches the host. We don't rely on --network host (Linux-only;
-# unsupported/beta on Docker Desktop for Mac) — instead the container gets
-# --add-host=host.docker.internal:host-gateway below, and here we point the local
-# providers' base URL at that hostname. Only injected when the user hasn't already set
-# a custom value (shell env or .env), so an explicit remote endpoint is never clobbered.
-default_local_provider_env() {
-  local var="$1" default="$2"
-  if [ -n "${!var:-}" ]; then return; fi
-  if [ -f "$REI_BENCH_DIR/.env" ] && grep -qE "^${var}=.+" "$REI_BENCH_DIR/.env"; then return; fi
-  echo "-e ${var}=${default}"
-}
-LOCAL_PROVIDER_ENV_ARGS="$(default_local_provider_env LLM_STUDIO_BASE_URL 'http://host.docker.internal:1234/v1') $(default_local_provider_env OLLAMA_BASE_URL 'http://host.docker.internal:11434')"
+# --network host (Linux) puts the container directly on the host's network namespace, so
+# 127.0.0.1-bound local model servers (LM Studio, Ollama both default to loopback-only —
+# verified against real servers: `ss -tln` showed 127.0.0.1:1234 / 127.0.0.1:11434, not
+# 0.0.0.0) are reachable as-is, with zero config. It's Linux-only (unsupported/beta on
+# Docker Desktop for Mac), so macOS instead uses --add-host=host.docker.internal:host-gateway.
+# Unlike Linux's host-gateway (a real route to the bridge IP, which can't reach
+# loopback-only ports), Docker Desktop proxies host.docker.internal through to the Mac's
+# own 127.0.0.1, so loopback-bound local servers stay reachable there without
+# reconfiguring them either. Only macOS needs the base URL pointed at that hostname —
+# and only when the user hasn't already set a custom value, so an explicit remote
+# endpoint is never clobbered.
+DOCKER_NETWORK_ARGS="--network host"
+LOCAL_PROVIDER_ENV_ARGS=""
+if [ "$(uname -s)" = "Darwin" ]; then
+  DOCKER_NETWORK_ARGS="--add-host=host.docker.internal:host-gateway"
+  default_local_provider_env() {
+    local var="$1" default="$2"
+    if [ -n "${!var:-}" ]; then return; fi
+    if [ -f "$REI_BENCH_DIR/.env" ] && grep -qE "^${var}=.+" "$REI_BENCH_DIR/.env"; then return; fi
+    echo "-e ${var}=${default}"
+  }
+  LOCAL_PROVIDER_ENV_ARGS="$(default_local_provider_env LLM_STUDIO_BASE_URL 'http://host.docker.internal:1234/v1') $(default_local_provider_env OLLAMA_BASE_URL 'http://host.docker.internal:11434')"
+fi
 
 # Collect task files
 TASK_FILES=()
@@ -144,8 +154,7 @@ for task_file in "${TASK_FILES[@]}"; do
 
     # Run container and tee output to a temp file so we can extract the results dir
     LOGFILE=$(mktemp /tmp/rei-bench-log.XXXXXX)
-    docker run --init -it --rm --platform linux/amd64 \
-      --add-host=host.docker.internal:host-gateway \
+    docker run --init -it --rm --platform linux/amd64 $DOCKER_NETWORK_ARGS \
       $ENV_ARGS $LOCAL_PROVIDER_ENV_ARGS \
       -v "$REI_BENCH_DIR:/rei-bench:z" \
       -v "$REI_DIR:/rei:z" \
