@@ -52,10 +52,24 @@ if [ "$(uname -s)" = "Darwin" ]; then
     LOCAL_PROVIDER_ENV_ARGS="$(default_local_provider_env LLM_STUDIO_BASE_URL 'http://host.docker.internal:1234/v1') $(default_local_provider_env OLLAMA_BASE_URL 'http://host.docker.internal:11434')"
 fi
 
+# Create persistent volume for a linux-native rei/node_modules (see comment below).
+docker volume create rei-node-modules-linux 2>/dev/null || true
+
 docker run --init --rm -it $DOCKER_NETWORK_ARGS \
     $ENV_ARGS $LOCAL_PROVIDER_ENV_ARGS \
     -v "$REI_BENCH_DIR:/rei-bench:z" \
     -v "$REI_DIR:/rei:z" \
+    -v "rei-node-modules-linux:/rei/node_modules" \
     -w /rei-bench \
     rei-bench-runner \
-    bun run src/index.ts "$@"
+    bash -c '
+        # rei/node_modules is bind-mounted from the host, but native addons in it (e.g.
+        # sharp, pulled in by rei'"'"'s RAG embedder) are platform-specific binaries fixed at
+        # install time. If rei was built on a Mac host, those are Darwin binaries that
+        # cannot load in this Linux container. The rei-node-modules-linux volume above
+        # shadows /rei/node_modules inside the container only (the host directory under
+        # REI_DIR is never touched), so install into it here with a real linux install.
+        # Cheap no-op after the first run since the volume persists.
+        cd /rei && bun install 2>&1 | tail -5
+        cd /rei-bench && bun run src/index.ts "$@"
+    ' bash "$@"

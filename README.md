@@ -98,15 +98,36 @@ Unlike pi-bench, there is no `models.json` and no `/v1/models` auto-detection �
 > to its path. **Local** providers (`llmstudio`, `ollama`) running on the host are reachable
 > from inside the container via `host.docker.internal` (see [Apple Silicon / macOS](#apple-silicon--macos)
 > below for how this is wired up) — no manual port-forwarding needed.
+>
+> `rei/node_modules` is bind-mounted too, and a `rei-node-modules-linux` Docker volume is
+> mounted over it so native addons (e.g. `sharp`, pulled in by rei's RAG embedder) get a
+> real linux-x64 install instead of whatever binary the host built — **required on macOS**,
+> where the host's `node_modules` is Darwin-only and crashes the container on startup
+> otherwise (`Cannot find module '.../sharp-linux-x64.node'`). See
+> [Apple Silicon / macOS](#apple-silicon--macos) below.
 
 ### Apple Silicon / macOS
 
-The SWE-bench containers are published for `linux/amd64` only (no arm64 image exists), so
-both `run-swe-bench.sh` and `scripts/pull-swe-containers.sh` pass `--platform linux/amd64`
-explicitly — on Apple Silicon this runs them emulated. **Enable "Use Rosetta for
-x86/amd64 emulation on Apple Silicon"** in Docker Desktop → Settings → General for a large
-speedup over plain QEMU emulation. `run-docker.sh` (curated tasks) is not pinned to a
-platform, so its image builds natively for the host architecture.
+Two host/container mismatches show up specifically on Mac and are handled automatically —
+nothing to configure to get a working run, but worth understanding if something looks off:
+
+1. **Native addons in `rei/node_modules` are Darwin binaries.** `rei`'s RAG embedder pulls
+   in `@xenova/transformers`, which eagerly loads `sharp` (confirmed by tracing the actual
+   bundle — it's not conditional on RAG/vision actually being used). `rei/node_modules` is
+   bind-mounted from the host as-is, so if `rei` was built on a Mac, `sharp`'s native binary
+   is for Darwin and can't load inside the Linux container — it crashes on the **first**
+   task, every time, regardless of provider. Both `run-swe-bench.sh` and `run-docker.sh` fix
+   this by mounting a `rei-node-modules-linux` Docker volume over `/rei/node_modules`
+   (shadowing it inside the container only — your host's real `rei/node_modules` is never
+   touched) and running a real `bun install` into it before the benchmark starts. Cached
+   after the first run, so this costs a one-time install rather than one per task.
+2. **The SWE-bench containers are `linux/amd64`-only** (no arm64 manifest exists — verified
+   directly against the GHCR registry). `run-swe-bench.sh` and
+   `scripts/pull-swe-containers.sh` pass `--platform linux/amd64` explicitly, so on Apple
+   Silicon they run emulated instead of failing on a platform mismatch. **Enable "Use
+   Rosetta for x86/amd64 emulation on Apple Silicon"** in Docker Desktop → Settings →
+   General for a large speedup over plain QEMU. `run-docker.sh` (curated tasks) is not
+   pinned to a platform, so that image builds natively for the host architecture.
 
 Reaching local model servers (LM Studio, Ollama) running on the host still uses
 `--network host` on Linux — unchanged, zero config, and it's the only mode that reliably

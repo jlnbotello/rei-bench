@@ -60,6 +60,18 @@ fi
 # Create persistent bun cache volume (shared across all container runs)
 docker volume create rei-bench-bun-cache 2>/dev/null || true
 
+# rei/node_modules is bind-mounted from the host (see REI_DIR above), but its native
+# addons (e.g. sharp, pulled in by @xenova/transformers for rei's RAG embedder) are
+# platform-specific binaries resolved at install time. If `rei` was built on a Mac host,
+# those binaries are for Darwin — and CANNOT load inside this Linux container, crashing
+# the harness on startup with e.g. "Cannot find module '../build/Release/sharp-linux-x64.node'"
+# (confirmed by reproducing it locally). Rather than mutating the host's node_modules — which
+# would break `rei`'s non-Docker local runs right back — a named volume is mounted OVER
+# /rei/node_modules, shadowing it inside the container only; the underlying host directory
+# under $REI_DIR is never touched. It's populated with a real linux-x64 `bun install` on
+# first use and cached thereafter, exactly like the existing bun-cache volume above.
+docker volume create rei-node-modules-linux 2>/dev/null || true
+
 # Collect env file args
 ENV_ARGS=""
 if [ -f "$REI_BENCH_DIR/.env" ]; then
@@ -158,6 +170,7 @@ for task_file in "${TASK_FILES[@]}"; do
       $ENV_ARGS $LOCAL_PROVIDER_ENV_ARGS \
       -v "$REI_BENCH_DIR:/rei-bench:z" \
       -v "$REI_DIR:/rei:z" \
+      -v "rei-node-modules-linux:/rei/node_modules" \
       -v "rei-bench-bun-cache:/root/.bun" \
       "$IMAGE" \
       bash -c "
@@ -177,6 +190,14 @@ for task_file in "${TASK_FILES[@]}"; do
 
         # Install rei-bench dependencies (fast if node_modules exists from bind mount)
         cd /rei-bench && bun install --frozen-lockfile 2>/dev/null || bun install 2>/dev/null
+
+        # rei/node_modules is shadowed by the rei-node-modules-linux volume (see comment
+        # above the docker run invocation) — install into it directly so native addons
+        # (sharp, etc.) are real linux-x64 binaries, not whatever the host built. Fast
+        # no-op after the first run since the volume persists. Subshell so it doesn't
+        # change the cwd out from under the bun run src/index.ts call below (relative
+        # path, expects /rei-bench).
+        (cd /rei && bun install 2>&1 | tail -5)
 
         # Activate the SWE-bench testbed conda environment so 'python' resolves
         # to the correct version (e.g. Python 3.6 for Django, 3.8+ for Sphinx)
