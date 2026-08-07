@@ -320,6 +320,24 @@ LMNR_GRPC_PORT=8001
 ```
 Both `run-docker.sh` and `run-swe-bench.sh` automatically pass this file into the container.
 
+### Per-model tuning (`rei.config.json`)
+`.env` sets provider-wide defaults (temperature, penalties, ...). To calibrate an
+individual **local** model (sampling, context window, output cap, thinking) without
+touching those global defaults, add a `rei.config.json` in the root `rei-bench/`
+directory — see [rei.config.json](rei.config.json) for a starter file, or `rei`'s own
+[`rei.config-example.json`](../rei/rei.config-example.json) / `docs/model-config-spec.md`
+for the full field reference.
+
+It **must** live at `rei-bench/rei.config.json`, not inside `rei/`: `rei` looks for it at
+its own workspace root first (for `rei-bench` that's the task's temp/testbed dir —
+per-task and ephemeral, never useful here) and falls back to `process.cwd()`, which for
+both the local and Docker paths is `rei-bench/` (the script always runs `bun run
+src/index.ts` from there). Matching is by the model `id` across every provider listed —
+the provider key itself is just organizational — exact id first, then normalized
+(strips the `org/` prefix and a trailing `-thinking`). Per-model values here take
+precedence over `.env`'s provider defaults, which take precedence over rei's own
+hardcoded defaults.
+
 ### Telemetry (Laminar)
 `rei` emits Laminar/OpenTelemetry spans. Since `rei-bench` deep-imports the agent
 (bypassing rei's CLI entry point), the harness initializes telemetry itself — but only
