@@ -26,8 +26,12 @@ bun install
 ```
 
 `rei-bench` deep-imports the agent from `rei`'s compiled output (`../rei/dist/**`),
-assuming the two repos are siblings. Build `rei` first, and rebuild it whenever its
-source changes:
+assuming the two repos are siblings. The Docker runners (`run-swe-bench.sh` /
+`run-docker.sh`) **build `rei` automatically** before each run, so its `dist/` always
+matches the current source — set `REI_SKIP_BUILD=1` to skip that for fast iteration.
+
+You only need to build `rei` by hand for the **local** path (`bun run src/index.ts`,
+see [Local Execution](#local-execution-use-with-caution)), which does not auto-build:
 ```bash
 cd ../rei && npm install && npm run build && cd -
 ```
@@ -67,6 +71,31 @@ This will automatically generate the 50 task files inside the `tasks/verified-mi
 
 ## Running Benchmarks
 
+### One task vs. the whole suite
+
+Every runner takes a **task target** as its first argument, and the rule is simple:
+
+- **A single `.json` file → runs that one task.** Best for iterating/debugging.
+  ```bash
+  ./run-swe-bench.sh tasks/verified-mini/django__django-11790.json \
+    --provider llmstudio --model mlx-community/qwen3.6-27b \
+    --judge-provider openrouter --judge-model google/gemini-2.5-flash-lite \
+    --platform mac --model-tag 20260812-v0.0.0
+  ```
+- **A directory → runs *every* `tasks/**/*.json` inside it** (e.g. all 50 of
+  `verified-mini/`). This is the full-suite run, and it auto-creates the batch results
+  folder under `benchmark_results/<platform>/`.
+  ```bash
+  ./run-swe-bench.sh tasks/verified-mini/ \
+    --provider llmstudio --model mlx-community/qwen3.6-27b \
+    --judge-provider openrouter --judge-model google/gemini-2.5-flash-lite \
+    --platform mac --model-tag 20260812-v0.0.0
+  ```
+
+Add `--pass 2` to retry only the tasks that fail on the first attempt. The same
+file-vs-directory rule applies to `run-docker.sh` (curated tasks) and the local
+`bun run src/index.ts` path.
+
 ### SWE-bench Tasks (Recommended)
 
 SWE-bench tasks run inside **official SWE-bench Docker containers** from `ghcr.io/epoch-research/swe-bench.eval.x86_64.*`. Each task gets its own container with:
@@ -88,14 +117,17 @@ Download all 49 container images upfront (~2.4 GB download, ~6 GB on disk due to
 translates the `--provider` / `--model` flags into those vars at startup. Supported
 providers: `llmstudio` (default), `ollama`, `openrouter`, `groq`, `gemini`, `huggingface`.
 Put API keys / endpoints in `.env` (see [Configuring Models](#configuring-models)).
-Unlike pi-bench, there is no `models.json` and no `/v1/models` auto-detection — pass
-`--model` explicitly.
+Unlike pi-bench, the **agent** ignores `models.json` and there is no `/v1/models`
+auto-detection — pass `--model` explicitly. (A `models.json` still exists, but it is
+used only by the LLM **judge**'s `ModelRegistry` to resolve its API key, not to select
+or configure the agent's model.)
 
 > **Note:** the SWE-bench Docker runner bind-mounts the sibling `rei` build into the
 > container at `/rei` (so `rei-bench`'s deep import of `../../rei/dist` resolves there).
-> **You must build `rei` first** (`npm run build` in the `rei` repo); the runner checks for
-> `rei/dist` and aborts otherwise. If `rei` is not a sibling of `rei-bench`, set `REI_DIR`
-> to its path. **Local** providers (`llmstudio`, `ollama`) running on the host are reachable
+> The runner **builds `rei` automatically** (`npm run build`) before each run so `dist/`
+> reflects the current source — set `REI_SKIP_BUILD=1` to skip it, and the run aborts only
+> if the build fails or `rei/dist` is still missing. If `rei` is not a sibling of
+> `rei-bench`, set `REI_DIR` to its path. **Local** providers (`llmstudio`, `ollama`) running on the host are reachable
 > from inside the container via `host.docker.internal` (see [Apple Silicon / macOS](#apple-silicon--macos)
 > below for how this is wired up) — no manual port-forwarding needed.
 >
@@ -141,10 +173,12 @@ through to the Mac's own `127.0.0.1`, so loopback-bound LM Studio/Ollama stay re
 there too without reconfiguring them. (This OS branch is automatic — `uname -s` is checked
 at script startup — so there's nothing to configure either way.)
 
-If you also run a local Laminar collector for telemetry on macOS, point `LMNR_BASE_URL` at
-`http://host.docker.internal` (its default of `http://localhost` won't reach the host under
-the macOS network mode above) — telemetry is best-effort and silently disables itself if
-unreachable, so this is optional.
+If you also run a local Laminar collector for telemetry on macOS, a `LMNR_BASE_URL` pointing
+at `localhost`/`127.0.0.1` is **rewritten automatically** to `http://host.docker.internal`
+before the container starts (its `localhost` default resolves to the container itself, not
+the host, under the macOS network mode above) — the same wiring used for `LLM_STUDIO_BASE_URL`.
+A non-loopback (genuinely remote) endpoint is left untouched. Telemetry is best-effort and
+silently disables itself if unreachable, so this is optional either way.
 
 **Example: local LM Studio**
 ```bash
@@ -300,8 +334,11 @@ The report UI renders that history in the task modal.
 ## Configuring Models
 
 `rei` is configured through environment variables (provider, model, endpoints, context
-window) — there is no `models.json`. `rei-bench` sets the provider/model vars from the
-CLI flags; everything else goes in `.env`.
+window) — the agent does not read `models.json`. `rei-bench` sets the provider/model vars
+from the CLI flags; everything else goes in `.env`. Per-model tuning (sampling, context
+window, max tokens) can additionally be declared in `rei-bench/rei.config.json`, which
+`rei` loads from the working directory and which **takes precedence over** the
+`REI_CONTEXT_WINDOW` / `REI_MAX_OUTPUT_TOKENS` env vars when a model matches.
 
 ### API Keys & endpoints
 Create a `.env` file in the root `rei-bench/` directory:
@@ -317,6 +354,9 @@ OPENROUTER_API_KEY=...
 LMNR_PROJECT_API_KEY=...
 LMNR_BASE_URL=http://localhost
 LMNR_GRPC_PORT=8001
+
+# Extra sandbox commands the benchmark needs (see "Sandbox command allow-list")
+REI_ALLOWED_COMMANDS=timeout,xargs,make,cp,mv
 ```
 Both `run-docker.sh` and `run-swe-bench.sh` automatically pass this file into the container.
 
@@ -337,6 +377,26 @@ the provider key itself is just organizational — exact id first, then normaliz
 (strips the `org/` prefix and a trailing `-thinking`). Per-model values here take
 precedence over `.env`'s provider defaults, which take precedence over rei's own
 hardcoded defaults.
+
+### Sandbox command allow-list
+`rei` runs shell commands through a sandbox that only permits an allow-list of commands
+(everything else returns `Security Error: Command '<x>' is not in the allow-list`, which
+just wastes an agent turn). rei's defaults already cover the usual toolchains plus
+read-only exploration (`ls find grep rg egrep fgrep cat head tail sed awk wc sort uniq cut
+tr diff jq stat basename dirname realpath …`). The benchmark additionally needs a few
+commands that aren't safe enough to be rei defaults but are fine inside the **throwaway
+bench container**, so it enables them via `REI_ALLOWED_COMMANDS` (comma-separated, appended
+to rei's defaults):
+
+| Command | Why the benchmark needs it |
+|---|---|
+| `timeout` | The SWE-bench task prompt instructs the agent to wrap test runs with it (`timeout 300 python -m pytest …`) to guard against infinite loops. Without it, the agent obeys the prompt and hits the allow-list. |
+| `xargs` | Common in `find … \| xargs …` pipelines. Excluded from rei defaults because it *executes* its argument as a command (bypassing the per-command check), so it's only enabled here, where the workspace is disposable. |
+| `make`, `cp`, `mv` | Build step + file moves that some tasks/repos rely on. |
+
+The always-denied floor (`rm -rf`, `sudo`, `chown`, `mkfs`) still applies even with these
+enabled — `REI_ALLOWED_COMMANDS` cannot re-enable a denied command. Adjust the list to
+match the commands your task set actually exercises.
 
 ### Telemetry (Laminar)
 `rei` emits Laminar/OpenTelemetry spans. Since `rei-bench` deep-imports the agent
